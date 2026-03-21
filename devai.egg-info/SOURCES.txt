@@ -1,9 +1,0 @@
-README.md
-setup.py
-devai/__init__.py
-devai/cli.py
-devai.egg-info/PKG-INFO
-devai.egg-info/SOURCES.txt
-devai.egg-info/dependency_links.txt
-devai.egg-info/entry_points.txt
-devai.egg-info/top_level.txt
