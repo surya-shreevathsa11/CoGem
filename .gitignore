@@ -1,2 +1,4 @@
-devai.egg-info/
+# Built by `pip install -e .` / `pipx install -e .` — do not commit
+*.egg-info/
 __pycache__/
+*.py[cod]
