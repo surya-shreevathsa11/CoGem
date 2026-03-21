@@ -5,7 +5,7 @@ A CLI-based development system that combines:
 - Gemini → strict code review
 - System → diff + improvement summary
 
-This creates a **self-improving coding workflow** that works for:
+This creates a self-improving coding workflow that works for:
 - Scripts (Python, JS, etc.)
 - Web development (HTML/CSS/JS)
 - Backend APIs
@@ -13,42 +13,47 @@ This creates a **self-improving coding workflow** that works for:
 
 ---
 
-## 🚀 Features
+## Features
 
-- 🔁 Iterative improvement loop
-- 🧠 Independent review (no bias from generation)
-- 📊 Code diff (before vs after)
-- 📄 Improvement summary
-- 📁 Multi-file project generation
-- ⚙️ CLI-based workflow (fast + repeatable)
+- Iterative improvement loop
+- Independent review (no bias from generation)
+- Code diff (before vs after)
+- Improvement summary
+- Multi-file project generation
+- CLI-based workflow (fast and repeatable)
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
-ai_automation/
+DevAi/
 │
-├── main.py
-├── README.md
+├── devai/
+│   ├── cli.py
+│   └── __init__.py
+│
 ├── .ai/
 │   ├── CODEX.md
 │   └── GEMINI.md
+│
+├── setup.py
+├── README.md
 ```
 
 ---
 
-## ⚙️ Requirements
+## Requirements
 
 - WSL (Windows Subsystem for Linux)
 - Python 3
-- Node.js (for JS execution)
+- pipx
 - Codex CLI
 - Gemini CLI
 
 ---
 
-## 🖥️ Step 1 — Install WSL (Windows)
+## Step 1 — Install WSL (Windows)
 
 Open PowerShell as Administrator:
 
@@ -60,7 +65,7 @@ Restart your system after installation.
 
 ---
 
-## 🐧 Step 2 — Open WSL
+## Step 2 — Open WSL
 
 After restart:
 
@@ -70,35 +75,29 @@ wsl
 
 ---
 
-## 📦 Step 3 — Install dependencies
+## Step 3 — Install dependencies
 
-### Update system
+Update system:
 ```
 sudo apt update && sudo apt upgrade -y
 ```
 
-### Install Python
+Install Python and pipx:
 ```
-sudo apt install python3 python3-pip -y
-```
-
-### Install Node.js
-```
-sudo apt install nodejs npm -y
+sudo apt install python3 python3-pip pipx -y
+pipx ensurepath
 ```
 
-Check:
+Restart terminal or run:
 ```
-node -v
-npm -v
+source ~/.bashrc
 ```
 
 ---
 
-## 🤖 Step 4 — Install CLIs
+## Step 4 — Install CLIs
 
 ### Codex CLI
-(Install based on your provider/setup)
 
 Verify:
 ```
@@ -121,61 +120,26 @@ gemini -p "hello"
 
 ---
 
-## 📁 Step 5 — Setup Project
+## Step 5 — Setup Project
 
-Clone your repo:
-
-```
-git clone <your-repo-url>
-cd ai_automation
-```
-
----
-
-## 🧠 Step 6 — Setup AI Rules
-
-Ensure these files exist:
+Clone the repository:
 
 ```
-.ai/CODEX.md
-.ai/GEMINI.md
-```
-
-These define:
-- how code is written
-- how code is reviewed
-
----
-
-## ▶️ Step 7 — Run System
-
-```
-python3 main.py
+git clone https://github.com/<your-username>/DevAi.git
+cd DevAi
 ```
 
 ---
 
-## ⚡ Optional — Create shortcut command
-
-Add alias:
+## Step 6 — Install CLI Tool
 
 ```
-nano ~/.bashrc
+pipx install -e .
 ```
 
-Add:
+---
 
-```
-alias devai="python3 /mnt/d/ai_automation/main.py"
-```
-
-Apply:
-
-```
-source ~/.bashrc
-```
-
-Now run:
+## Step 7 — Run
 
 ```
 devai
@@ -183,7 +147,7 @@ devai
 
 ---
 
-## 🧠 Usage
+## Usage
 
 ### General pattern
 
@@ -196,24 +160,24 @@ devai
 
 ### Examples
 
-#### Script
+Script:
 ```
 >>> write python script to rename files in a folder
 ```
 
-#### Web page
+Web page:
 ```
 >>> create landing page with navbar and hero section
 ```
 
-#### Backend
+Backend:
 ```
 >>> build node API with login route and JWT authentication
 ```
 
 ---
 
-## 🔁 Workflow
+## Workflow
 
 1. Codex generates code  
 2. Gemini reviews independently  
@@ -225,7 +189,7 @@ devai
 
 ---
 
-## 📁 Project Mode
+## Project Mode
 
 If task includes multiple files:
 
@@ -238,34 +202,35 @@ explorer.exe index.html
 
 ---
 
-## ⚠️ Important Rules
+## Important Rules
 
-- Always describe **what you want**, not how to code it  
+- Always describe what you want, not how to code it  
 - Avoid mixing manual coding with AI workflow  
 - Use separate folders for each project  
 
 ---
 
-## 🧠 Philosophy
+## Philosophy
 
 This is not an assistant.
 
-This is a **controlled development system** where:
-- generation ≠ validation  
+This is a controlled development system where:
+- generation is separate from validation  
 - review is independent  
 - improvements are traceable  
 
 ---
 
-## 🚀 Future Improvements
+## Updating the Tool
 
-- Auto-run servers  
-- Auto-fix runtime errors  
-- Full-stack project automation  
-- Test generation  
+After making changes:
+
+```
+pipx install -e . --force
+```
 
 ---
 
-## 🧾 License
+## License
 
-MIT
+MIT (or your choice)→ 
