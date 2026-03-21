@@ -230,7 +230,4 @@ pipx install -e . --force
 ```
 
 ---
-
-## License
-
-MIT (or your choice)→ 
+ 
