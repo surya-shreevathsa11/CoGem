@@ -325,14 +325,32 @@ def main():
         console.print()
         console.print(Rule(Text(f" {label} ", style=TITLE), style=BORDER, align="left"))
 
+    def _busy_status_text(headline: str, hint: Optional[str] = None) -> Text:
+        """Two-line status so it is obvious the process is still running."""
+        t = Text()
+        t.append(headline.strip() + "\n", style="italic")
+        t.append(
+            hint
+            or "Working — Codex/Gemini can take 1–5+ minutes on big tasks. Wait until this spinner stops before typing.",
+            style="dim",
+        )
+        return t
+
     def run_cmd(cmd: List[str], status_msg: Optional[str] = None):
         if status_msg:
+            t0 = time.monotonic()
             with console.status(
-                Text(status_msg, style=ITALIC_DIM),
+                _busy_status_text(status_msg),
                 spinner="dots12",
-                spinner_style=MUTED,
+                spinner_style="#be5555",
+                refresh_per_second=12,
             ):
                 result = subprocess.run(cmd, capture_output=True, text=True)
+            elapsed = time.monotonic() - t0
+            if elapsed >= 1.0:
+                console.print(
+                    Text(f"  (external CLI finished in {elapsed:.1f}s)", style=DIM)
+                )
         else:
             result = subprocess.run(cmd, capture_output=True, text=True)
         return result.stdout, result.stderr
@@ -569,9 +587,13 @@ No markdown, no other text."""
             abs_p = os.path.abspath(target)
             work = os.path.dirname(abs_p) or os.getcwd()
             with console.status(
-                Text("Running...", style=ITALIC_DIM),
+                _busy_status_text(
+                    "Running script…",
+                    "Still running — wait for the spinner to stop (scripts may take a while).",
+                ),
                 spinner="dots12",
-                spinner_style=MUTED,
+                spinner_style="#be5555",
+                refresh_per_second=12,
             ):
                 proc = subprocess.run(
                     [sys.executable, abs_p],
@@ -594,9 +616,13 @@ No markdown, no other text."""
                 abs_p = os.path.abspath(target)
                 work = os.path.dirname(abs_p) or os.getcwd()
                 with console.status(
-                    Text("Running...", style=ITALIC_DIM),
+                    _busy_status_text(
+                        "Running Node script…",
+                        "Still running — wait for the spinner to stop.",
+                    ),
                     spinner="dots12",
-                    spinner_style=MUTED,
+                    spinner_style="#be5555",
+                    refresh_per_second=12,
                 ):
                     proc = subprocess.run(
                         [node, abs_p],
@@ -614,9 +640,13 @@ No markdown, no other text."""
             abs_p = os.path.abspath(target)
             uri = Path(abs_p).as_uri()
             with console.status(
-                Text("Opening preview...", style=ITALIC_DIM),
+                _busy_status_text(
+                    "Opening preview in your browser…",
+                    "Working — your browser should open when this spinner stops.",
+                ),
                 spinner="dots12",
-                spinner_style=MUTED,
+                spinner_style="#be5555",
+                refresh_per_second=12,
             ):
                 webbrowser.open(uri)
 
