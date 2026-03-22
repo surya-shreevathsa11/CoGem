@@ -139,7 +139,7 @@ Official package: **`@openai/codex`**. See [openai/codex](https://github.com/ope
 ### Install globally
 
 ```bash
-npm install -g @openai/codex
+sudo npm install -g @openai/codex
 ```
 
 ### Verify
@@ -193,8 +193,8 @@ Complete **Sign in with Google** or set **`GEMINI_API_KEY`** as described in the
 
 ```bash
 cd ~
-git clone https://github.com/<your-username>/<your-repo>.git
-cd <your-repo>
+git clone https://github.com/surya-shreevathsa11/CoGem.git
+cd <CoGem>
 ```
 
 Or clone your repo URL and `cd` into it.
