@@ -31,11 +31,19 @@ ai_automation/
 │
 ├── cogem/
 │   ├── cli.py
+│   ├── stitch/
+│   │   ├── __init__.py
+│   │   ├── adapters.py
+│   │   ├── detection.py
+│   │   └── prompt_builder.py
 │   └── __init__.py
+├── tests/
+│   └── test_stitch.py
 │
 ├── .ai/
 │   ├── CODEX.md
-│   └── GEMINI.md
+│   ├── GEMINI.md
+│   └── STITCH_WEBSITE.md
 │
 ├── setup.py
 ├── README.md
@@ -376,6 +384,34 @@ Optional limits: `COGEM_AT_MAX_FILE_BYTES` (default `400000`), `COGEM_AT_MAX_TOT
 
 `@` references are **not** inlined for pure **CHAT** routing (you’ll see a short notice).
 
+### Google Stitch (UI-heavy frontend tasks)
+
+For **frontend-first** builds (websites, landing pages, dashboards, HTML/CSS/JS UIs), cogem can run a **Stitch stage** *before* the usual Codex draft → Gemini review → Codex improve loop:
+
+1. **Detect** a UI-heavy task from your prompt (heuristic).
+2. **Try adapters** in order: optional CLI → optional HTTP → optional browser stub (off by default) → **manual handoff**.
+3. **Fold** any Stitch output (or your export) into the Codex/Gemini prompts, plus strict rules from `.ai/STITCH_WEBSITE.md`.
+4. **Non-frontend** tasks are unchanged.
+
+**Disable** the Stitch stage entirely: `COGEM_STITCH=0` or `cogem --no-stitch`.
+
+**Manual mode** (default when no adapter succeeds): cogem prints a ready-to-paste **Stitch prompt**, then asks for your **exported HTML/CSS** (paste or `@path`). Non-interactive stdin skips the paste step; use `COGEM_STITCH_CLI` or `COGEM_STITCH_HTTP_URL` instead.
+
+#### Stitch MCP (`stitch-mcp` on npm)
+
+The community **stitch-mcp** package is an MCP **server** that talks to Google’s Stitch API (with `gcloud` auth). Cogem can act as a minimal MCP **client** over stdio and call the generate tool when you opt in:
+
+1. Install **Google Cloud SDK**, run `gcloud auth application-default login`, and set **`GOOGLE_CLOUD_PROJECT`** (see the [stitch-mcp README](https://www.npmjs.com/package/stitch-mcp)).
+2. Install **Node.js** so **`npx`** is available.
+3. Enable the Stitch MCP stage in cogem:
+   - `COGEM_STITCH_MCP=1`
+   - Defaults: `COGEM_STITCH_MCP_CMD=npx` and `COGEM_STITCH_MCP_ARGS=-y stitch-mcp` (override if needed).
+4. Run a frontend-style task in cogem; the adapter chain will try **CLI → MCP → HTTP → manual**.
+
+If MCP fails (auth, API, or tool schema), cogem **falls back** to manual export as before. Tool name defaults to `generate_screen_from_text`; override with `COGEM_STITCH_MCP_TOOL` if your server exposes a different name.
+
+There is **no guaranteed public Stitch API** in cogem: integration is **pluggable** via env vars (see table below). Validity of any HTTP/CLI tool is **your** responsibility.
+
 ---
 
 ## Environment variables (optional)
@@ -389,6 +425,21 @@ Optional limits: `COGEM_AT_MAX_FILE_BYTES` (default `400000`), `COGEM_AT_MAX_TOT
 | `COGEM_SUBPROCESS_TIMEOUT_SEC` | Integer seconds; abort a stuck `codex` / `gemini` subprocess after this time |
 | `COGEM_AT_MAX_FILE_BYTES` | Max bytes read per `@` file (default `400000`) |
 | `COGEM_AT_MAX_TOTAL_CHARS` | Max total characters for all `@` attachments in one turn (default `120000`) |
+| `COGEM_STITCH` | `1` (default) / `0` — enable or disable the Stitch stage for UI-heavy tasks |
+| `COGEM_STITCH_CLI` | Optional: executable for a Stitch adapter (stdin sends the prompt unless `COGEM_STITCH_CLI_STDIN=0` + temp file) |
+| `COGEM_STITCH_CLI_ARGS` | Extra argv appended after the CLI command |
+| `COGEM_STITCH_CLI_STDIN` | `1` (default) / `0` — pass prompt on stdin vs temp file path as last arg |
+| `COGEM_STITCH_HTTP_URL` | Optional: HTTP endpoint for JSON `{ "prompt": "..." }` (customize body with `COGEM_STITCH_HTTP_BODY`) |
+| `COGEM_STITCH_HTTP_TOKEN` | Optional `Authorization: Bearer` for HTTP adapter |
+| `COGEM_STITCH_TIMEOUT_SEC` | Timeout for CLI/HTTP Stitch attempts (default `300`) |
+| `COGEM_STITCH_BROWSER` | `1` to acknowledge browser automation (not implemented; kept off by default) |
+| `COGEM_STITCH_MCP` | `1` / `true` — enable MCP stdio client to `npx stitch-mcp` (after CLI, before HTTP) |
+| `COGEM_STITCH_MCP_CMD` | Command to launch MCP server (default `npx`) |
+| `COGEM_STITCH_MCP_ARGS` | Args for the server (default `-y stitch-mcp`) |
+| `COGEM_STITCH_MCP_TOOL` | MCP tool name (default `generate_screen_from_text`) |
+| `COGEM_STITCH_MCP_PROMPT_KEY` | JSON argument key for the prompt (default `prompt`) |
+| `COGEM_STITCH_MCP_TOOL_ARGS_JSON` | Optional extra JSON object merged into tool `arguments` |
+| `COGEM_STITCH_MCP_TIMEOUT_SEC` | Max seconds for the MCP round-trip (default `300`) |
 
 ---
 

@@ -167,6 +167,14 @@ def main():
         CompleteStyle = None  # type: ignore
         InMemoryHistory = None  # type: ignore
 
+    from cogem.stitch import (
+        build_stitch_prompt,
+        detect_frontend_task,
+        should_skip_stitch_due_to_attachments,
+        try_stitch_adapters,
+    )
+    from cogem.stitch.adapters import format_stitch_context_for_codex, looks_like_ui_content
+
     _ap = argparse.ArgumentParser(
         prog="cogem",
         description="Cogem: Codex + Gemini dual-agent loop (generate, review, improve).",
@@ -201,9 +209,20 @@ def main():
             "Omit to use the Gemini CLI default."
         ),
     )
+    _ap.add_argument(
+        "--no-stitch",
+        action="store_true",
+        help=(
+            "Disable the Google Stitch stage for UI-heavy tasks (see COGEM_STITCH env)."
+        ),
+    )
     _args = _ap.parse_args()
     _codex_model = (_args.codex_model or os.environ.get("COGEM_CODEX_MODEL") or "").strip() or None
     _gemini_model = (_args.gemini_model or os.environ.get("COGEM_GEMINI_MODEL") or "").strip() or None
+    stitch_feature_on = (not _args.no_stitch) and (
+        (os.environ.get("COGEM_STITCH") or "1").strip().lower()
+        not in ("0", "false", "no", "off", "disabled")
+    )
 
     if not boot_sequence():
         raise SystemExit(1)
@@ -1080,13 +1099,13 @@ __TASK__
             complete_style=CompleteStyle.COLUMN,
         )
 
-    def read_task_line() -> str:
+    def read_task_line(prompt: str = "What would you like to do? ") -> str:
         if task_prompt_session is not None:
             try:
-                return task_prompt_session.prompt("What would you like to do? ").strip()
+                return task_prompt_session.prompt(prompt).strip()
             except (EOFError, KeyboardInterrupt):
                 raise
-        prompt_label = Text("What would you like to do? ", style=TITLE)
+        prompt_label = Text(prompt, style=TITLE)
         return console.input(prompt_label).strip()
 
     def parse_build_or_chat(raw: str):
@@ -1453,6 +1472,12 @@ No markdown, no other text."""
     with open(os.path.join(AI_PATH, "GEMINI.md"), encoding="utf-8") as f:
         GEMINI_RULES = f.read()
 
+    try:
+        with open(os.path.join(AI_PATH, "STITCH_WEBSITE.md"), encoding="utf-8") as f:
+            STITCH_WEBSITE_RULES = f.read()
+    except OSError:
+        STITCH_WEBSITE_RULES = ""
+
     first_turn = True
 
     while True:
@@ -1748,13 +1773,91 @@ No markdown, no other text."""
             )
             live_reasoning_banner_build(task, mem_block)
 
+            frontend_detected = detect_frontend_task(task_clean)
+            stitch_block = ""
+            stitch_rules_extra = ""
+            if frontend_detected and STITCH_WEBSITE_RULES.strip():
+                stitch_rules_extra = (
+                    "\n\n## STITCH_WEBSITE rules (strict)\n"
+                    + STITCH_WEBSITE_RULES
+                    + "\n"
+                )
+
+            if stitch_feature_on and mode == "workflow" and frontend_detected:
+                if should_skip_stitch_due_to_attachments(attach_block):
+                    trace_done(
+                        "Frontend task detected; skipping Stitch because @ attachments already include UI/HTML."
+                    )
+                else:
+                    trace_doing(
+                        "Frontend-heavy task detected; running the Google Stitch stage (adapter or manual handoff)."
+                    )
+                    stitch_prompt = build_stitch_prompt(task_clean)
+                    sr = try_stitch_adapters(stitch_prompt)
+                    if sr.mode == "direct" and sr.content:
+                        stitch_block = format_stitch_context_for_codex(sr.content)
+                        trace_done(
+                            f"Stitch: received UI via adapter ({sr.adapter_name}). Continuing with Codex + Gemini."
+                        )
+                    else:
+                        trace_done(
+                            "Stitch: direct integration unavailable; using manual handoff (prompt + export)."
+                        )
+                        console.print()
+                        section_rule("Stitch prompt (copy into Google Stitch)")
+                        console.print()
+                        console.print(stitch_prompt)
+                        console.print()
+                        console.print(
+                            Text(
+                                "Export HTML/CSS (or bundled frontend) from Stitch. Then paste below, "
+                                "or type a line with @path/to/file.html — Enter to skip.",
+                                style=MUTED,
+                            )
+                        )
+                        console.print()
+                        if not sys.stdin.isatty():
+                            console.print(
+                                Text(
+                                    "Non-interactive stdin: cannot prompt for Stitch paste. "
+                                    "Set COGEM_STITCH_CLI or COGEM_STITCH_HTTP_URL, or run cogem in a real terminal.",
+                                    style=MUTED,
+                                )
+                            )
+                            trace_done(
+                                "Skipping Stitch paste; continuing without Stitch HTML."
+                            )
+                        else:
+                            stitch_in = read_task_line(
+                                "Stitch export — paste code or @path (Enter to skip): "
+                            )
+                            if stitch_in.strip():
+                                if looks_like_ui_content(stitch_in):
+                                    stitch_block = format_stitch_context_for_codex(stitch_in)
+                                else:
+                                    _c2, attach_s = expand_at_mentions(stitch_in)
+                                    if attach_s:
+                                        stitch_block = (
+                                            "\n\n---\n\n## Stitch / UI source (from your files)\n\n"
+                                            + attach_s
+                                        )
+                                    else:
+                                        stitch_block = format_stitch_context_for_codex(stitch_in)
+                                trace_done(
+                                    "Stitch export captured; continuing with Codex draft using this UI context."
+                                )
+                            else:
+                                trace_done(
+                                    "No Stitch export; Codex will draft from your task alone (no Stitch HTML)."
+                                )
+
             # ---------- generate ----------
 
             trace_doing(
                 "I'm calling Codex with your task, CODEX.md rules, and any saved memory so I can get a first implementation pass."
             )
             raw, draft_err, draft_rc = run_codex(
-                f"{mem_block}{attach_block}{mode_hint}{CODEX_RULES}\n\nTASK:\n{task_clean}\n",
+                f"{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}\n\nTASK:\n{task_clean}\n",
                 "Codex: drafting initial implementation...",
             )
             if draft_rc != 0:
@@ -1824,7 +1927,7 @@ No markdown, no other text."""
                 "I'm calling Gemini now to critique the draft (risks, style, missing pieces)—independent of Codex's voice."
             )
             review, gem_rev_err, gem_rev_rc = run_gemini(
-                f"{mem_block}{attach_block}{mode_hint}{GEMINI_RULES}\n\nCODE:\n{code}",
+                f"{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{GEMINI_RULES}\n\nCODE:\n{code}",
                 "Gemini: writing structured review...",
             )
             if gem_rev_rc != 0:
@@ -1863,7 +1966,7 @@ No markdown, no other text."""
             )
             improved_raw, imp_err, imp_rc = run_codex(
                 f"""
-{mem_block}{attach_block}{mode_hint}{CODEX_RULES}
+{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}
 
 You wrote:
 
@@ -1924,7 +2027,7 @@ Return ONLY code.
             )
             summary, gem_sum_err, gem_sum_rc = run_gemini(
                 f"""
-{mem_block}{attach_block}{mode_hint}{GEMINI_RULES}
+{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{GEMINI_RULES}
 
 Compare and summarize improvements.
 
