@@ -219,6 +219,8 @@ pipx install -e .
 cogem
 ```
 
+On first launch, **cogem** creates a **`memory.json`** file next to the project (it is git-ignored). Each clone or machine gets its own file for saved stack notes and context—nothing personal is shipped with the repo.
+
 ---
 
 ## Usage
