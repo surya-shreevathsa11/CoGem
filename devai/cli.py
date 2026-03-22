@@ -147,10 +147,11 @@ def main():
     import shutil
     from pathlib import Path
     from datetime import datetime, timezone
-    from typing import List, Optional
+    from typing import List, Optional, Tuple
+
+    import threading
 
     from rich.console import Console
-    from rich.panel import Panel
     from rich.rule import Rule
     from rich.text import Text
 
@@ -162,11 +163,18 @@ def main():
     TITLE = "bold #be5555"
     SUBTITLE = "#5f3737"
     MUTED = "#c87878"
-    PANEL_FILL = "on #fff0f0"
     DIM = "dim"
     ITALIC_DIM = "italic dim"
+    LOG_START = "bold #be5555"
+    LOG_DONE = "green"
+    LOG_WARN = "yellow"
+    LOG_ERR = "bold red"
+    LOG_OK = "green"
+    LOG_TRACE = "italic #9a7a7a"
 
     console = Console()
+    # Best-effort token totals per provider (parsed from CLI output when present).
+    session_tokens = {"codex": 0, "gemini": 0}
 
     ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     AI_PATH = os.path.join(ROOT, ".ai")
@@ -241,7 +249,70 @@ def main():
         )
 
     def _wall_clock() -> str:
-        return datetime.now().strftime("%H:%M:%S")
+        """Local wall time only (no UTC-style suffix — avoids confusion on Windows)."""
+        return time.strftime("%H:%M:%S", time.localtime())
+
+    _TOKEN_PATTERNS = (
+        re.compile(r"tokens?\s+used[:\s]+([\d,]+)", re.I),
+        re.compile(r"total\s+tokens?[:\s]+([\d,]+)", re.I),
+        re.compile(r"(?:^|\s)([\d,]+)\s+tokens?\s+used", re.I),
+    )
+
+    def _extract_tokens_from_text(text: str) -> Optional[int]:
+        """Return a single token count if the CLI printed something recognizable."""
+        if not text or not text.strip():
+            return None
+        for pat in _TOKEN_PATTERNS:
+            m = pat.search(text)
+            if m:
+                try:
+                    return int(m.group(1).replace(",", ""))
+                except ValueError:
+                    continue
+        return None
+
+    def _record_tokens(provider: str, text: str) -> None:
+        n = _extract_tokens_from_text(text)
+        if n is None:
+            return
+        session_tokens[provider] = session_tokens.get(provider, 0) + n
+        console.print(
+            Text(
+                f"[devai] Tokens (~{provider} this call): {n}  "
+                f"(running total this turn ~{session_tokens[provider]})",
+                style=MUTED,
+            )
+        )
+
+    def _token_turn_footer() -> None:
+        """Summarize parsed token counts for the current user turn."""
+        c = int(session_tokens.get("codex", 0) or 0)
+        g = int(session_tokens.get("gemini", 0) or 0)
+        if c == 0 and g == 0:
+            console.print(
+                Text(
+                    "[devai] Token usage: no counts found in CLI output this turn "
+                    "(free-tier CLIs often omit usage; check provider dashboards if needed).",
+                    style=MUTED,
+                )
+            )
+        else:
+            console.print(
+                Text(
+                    f"[devai] Token estimates this turn (parsed from CLI text): "
+                    f"codex ~{c}, gemini ~{g}",
+                    style=MUTED,
+                )
+            )
+
+    def _subprocess_timeout_sec() -> Optional[int]:
+        raw = os.environ.get("DEVAI_SUBPROCESS_TIMEOUT_SEC", "").strip()
+        if not raw:
+            return None
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            return None
 
     def _task_preview(task: str, max_len: int = 90) -> str:
         preview = re.sub(r"\s+", " ", task.strip())
@@ -249,119 +320,175 @@ def main():
             preview = preview[: max_len - 3] + "..."
         return preview
 
+    def _say(msg: str) -> None:
+        """Colored narration (Rich); readable in every terminal that supports ANSI."""
+        if msg.startswith("[devai] START:"):
+            console.print(Text(msg, style=LOG_START))
+        elif msg.startswith("[devai] DONE:"):
+            console.print(Text(msg, style=LOG_DONE))
+        elif msg.startswith("[devai] WARNING"):
+            console.print(Text(msg, style=LOG_WARN))
+        elif msg.startswith("[devai] ERROR"):
+            console.print(Text(msg, style=LOG_ERR))
+        elif msg.startswith("[devai]"):
+            console.print(Text(msg, style=TITLE))
+        elif msg.startswith("  ") and (" > " in msg or " ok " in msg):
+            console.print(Text(msg, style=LOG_TRACE))
+        elif msg.strip().startswith("[ok]"):
+            console.print(Text(msg, style=LOG_OK))
+        else:
+            console.print(msg)
+
     def live_reasoning_banner_build(task: str, mem_block: str) -> None:
-        """One-line context; the rest of the run is narrated live as each step executes."""
         preview = _task_preview(task, 88)
         mem_on = bool(mem_block and mem_block.strip())
-        console.print()
-        console.print(
-            Rule(Text(" Live reasoning ", style=TITLE), style=BORDER, align="left")
-        )
-        head = Text()
-        head.append("[", style=DIM)
-        head.append(_wall_clock(), style=MUTED)
-        head.append("] ", style=DIM)
-        head.append("Build · ", style=TITLE)
-        head.append(f"«{preview}»", style=ITALIC_DIM)
-        head.append(
-            " · prior-turn notes folded into prompts"
+        _say("")
+        _say("[devai] Thinking (build)")
+        _say(f"  request: {preview}")
+        _say(
+            "  context: prior notes are included in Codex/Gemini prompts."
             if mem_on
-            else " · prompts use only this message + rule files",
-            style=DIM,
+            else "  context: no saved notes yet; using your message + rule files."
         )
-        console.print(head)
-        console.print(
-            Text(
-                "  Lines below appear as each step actually runs (not ahead of time).",
-                style=DIM,
-            )
-        )
-        console.print()
+        _say("  next: I will narrate each step on this log as it runs.")
+        _say("")
 
     def live_reasoning_banner_chat(task: str) -> None:
         preview = _task_preview(task, 88)
-        console.print()
-        console.print(
-            Rule(Text(" Live reasoning ", style=TITLE), style=BORDER, align="left")
-        )
-        head = Text()
-        head.append("[", style=DIM)
-        head.append(_wall_clock(), style=MUTED)
-        head.append("] ", style=DIM)
-        head.append("Chat · ", style=TITLE)
-        head.append(f"«{preview}»", style=ITALIC_DIM)
-        console.print(head)
-        console.print()
+        _say("")
+        _say("[devai] Thinking (conversation)")
+        _say(f"  request: {preview}")
+        _say("  next: showing routed reply below (no code pipeline).")
+        _say("")
 
     def trace_doing(msg: str) -> None:
-        """First-person, present-tense, timestamped when the step starts."""
-        line = Text()
-        line.append("[", style=DIM)
-        line.append(_wall_clock(), style=MUTED)
-        line.append("] ", style=DIM)
-        line.append("\u2192 ", style=TITLE)
-        line.append(msg, style=ITALIC_DIM)
-        console.print(line)
+        _say(f"  {_wall_clock()} > {msg}")
 
     def trace_done(msg: str) -> None:
-        line = Text()
-        line.append("[", style=DIM)
-        line.append(_wall_clock(), style=MUTED)
-        line.append("] ", style=DIM)
-        line.append("\u2713 ", style=MUTED)
-        line.append(msg, style=DIM)
-        console.print(line)
+        _say(f"  {_wall_clock()} ok {msg}")
 
-    def section_panel(title: str) -> Panel:
-        return Panel(
-            Text(title, style=TITLE),
-            border_style=BORDER,
-            style=PANEL_FILL,
-            expand=False,
-            padding=(0, 1),
-        )
+    def section_heading(label: str) -> None:
+        _say("")
+        _say(f"---------- {label} ----------")
 
     def section_rule(label: str) -> None:
-        console.print()
-        console.print(Rule(Text(f" {label} ", style=TITLE), style=BORDER, align="left"))
+        section_heading(label)
 
-    def _busy_status_text(headline: str, hint: Optional[str] = None) -> Text:
-        """Two-line status so it is obvious the process is still running."""
-        t = Text()
-        t.append(headline.strip() + "\n", style="italic")
-        t.append(
-            hint
-            or "Working — Codex/Gemini can take 1–5+ minutes on big tasks. Wait until this spinner stops before typing.",
-            style="dim",
-        )
-        return t
+    _SPINNER_DIM = "\033[2m"
+    _SPINNER_RESET = "\033[0m"
 
-    def run_cmd(cmd: List[str], status_msg: Optional[str] = None):
-        if status_msg:
-            t0 = time.monotonic()
-            with console.status(
-                _busy_status_text(status_msg),
-                spinner="dots12",
-                spinner_style="#be5555",
-                refresh_per_second=12,
-            ):
-                result = subprocess.run(cmd, capture_output=True, text=True)
-            elapsed = time.monotonic() - t0
-            if elapsed >= 1.0:
-                console.print(
-                    Text(f"  (external CLI finished in {elapsed:.1f}s)", style=DIM)
+    def _run_with_ascii_progress(label: str, fn):
+        """
+        ASCII spinner on stdout (no Unicode). Always visible vs Rich / braille.
+        """
+        import sys as _sys
+
+        _say(f"[devai] START: {label}")
+        stop = threading.Event()
+        t0 = time.monotonic()
+        frames = "|/-\\"
+
+        def _spin() -> None:
+            i = 0
+            while not stop.is_set():
+                elapsed = int(time.monotonic() - t0)
+                ch = frames[i % len(frames)]
+                tail = f"... working {ch} ({elapsed}s)"
+                line = f"  {label} {tail}"
+                pad = max(0, 76 - len(line))
+                _sys.stdout.write(
+                    "\r"
+                    + _SPINNER_DIM
+                    + line
+                    + (" " * pad)
+                    + _SPINNER_RESET
                 )
+                _sys.stdout.flush()
+                time.sleep(0.12)
+                i += 1
+
+        th = threading.Thread(target=_spin, daemon=True)
+        th.start()
+        try:
+            out = fn()
+        finally:
+            stop.set()
+            th.join(timeout=2.0)
+            _sys.stdout.write("\r" + (" " * 80) + "\r\n")
+            _sys.stdout.flush()
+        elapsed = time.monotonic() - t0
+        _say(f"[devai] DONE:  {label}  ({elapsed:.1f}s)")
+        return out
+
+    def run_cmd(
+        cmd: List[str], status_msg: Optional[str] = None
+    ) -> Tuple[str, str, int]:
+        to = _subprocess_timeout_sec()
+
+        def _run():
+            kw = {"capture_output": True, "text": True}
+            if to is not None:
+                kw["timeout"] = to
+            try:
+                return subprocess.run(cmd, **kw)
+            except subprocess.TimeoutExpired:
+                _say(
+                    f"[devai] ERROR: subprocess timed out after {to}s "
+                    f"(set DEVAI_SUBPROCESS_TIMEOUT_SEC or fix the CLI hang)."
+                )
+                raise
+
+        if status_msg:
+            result = _run_with_ascii_progress(status_msg, _run)
+            if result.returncode != 0:
+                _say(
+                    f"[devai] WARNING: process exited with code {result.returncode}"
+                )
+                err = (result.stderr or "").strip()
+                if err:
+                    clip = err[:800] + ("..." if len(err) > 800 else "")
+                    console.print(Text(f"  stderr: {clip}", style=LOG_WARN))
         else:
-            result = subprocess.run(cmd, capture_output=True, text=True)
-        return result.stdout, result.stderr
+            result = _run()
+        return result.stdout or "", result.stderr or "", result.returncode
 
-    def run_codex(prompt: str, status_msg: str) -> str:
-        stdout, _ = run_cmd(["codex", "exec", prompt], status_msg)
-        return stdout
+    def _codex_argv(prompt: str) -> List[str]:
+        """codex exec with flags that avoid failing outside a git repo / trusted tree."""
+        argv = ["codex", "exec", "--skip-git-repo-check"]
+        wd = os.environ.get("DEVAI_CODEX_WORKDIR", "").strip()
+        if wd:
+            argv.extend(["-C", os.path.abspath(wd)])
+        argv.append(prompt)
+        return argv
 
-    def run_gemini(prompt: str, status_msg: str) -> str:
-        stdout, _ = run_cmd(["gemini", "-p", prompt], status_msg)
-        return stdout.strip()
+    def _run_proc(args: List[str], cwd: Optional[str] = None):
+        """subprocess.run with same optional timeout as Codex/Gemini."""
+        kw = {"capture_output": True, "text": True}
+        if cwd is not None:
+            kw["cwd"] = cwd
+        to = _subprocess_timeout_sec()
+        if to is not None:
+            kw["timeout"] = to
+        try:
+            return subprocess.run(args, **kw)
+        except subprocess.TimeoutExpired:
+            _say(
+                f"[devai] ERROR: subprocess timed out after {to}s "
+                f"(set DEVAI_SUBPROCESS_TIMEOUT_SEC)."
+            )
+            raise
+
+    def run_codex(prompt: str, status_msg: str) -> Tuple[str, str, int]:
+        stdout, stderr, rc = run_cmd(_codex_argv(prompt), status_msg)
+        combined = (stdout or "") + "\n" + (stderr or "")
+        _record_tokens("codex", combined)
+        return stdout or "", stderr or "", rc
+
+    def run_gemini(prompt: str, status_msg: str) -> Tuple[str, str, int]:
+        stdout, stderr, rc = run_cmd(["gemini", "-p", prompt], status_msg)
+        combined = (stdout or "") + "\n" + (stderr or "")
+        _record_tokens("gemini", combined)
+        return (stdout or "").strip(), stderr or "", rc
 
     def extract_code(text):
         match = re.search(r"```(?:\w+)?\n([\s\S]*?)```", text)
@@ -522,21 +649,47 @@ No markdown, no other text."""
         prompt = (
             MEMORY_EXTRACT_SESSION.replace("__TASK__", t).replace("__SUMMARY__", s)
         )
-        out = run_codex(
+        _say(
+            "[devai] Saving session memory (extra Codex call) — "
+            "you will see START/DONE lines below; this is not stuck."
+        )
+        out, _err, rc = run_codex(
             prompt,
             "Codex: updating persistent context...",
         )
-        auto_memory_from_text(mem, out)
+        if rc != 0:
+            console.print(
+                Text(
+                    f"[devai] Session memory update skipped (Codex exit {rc}).",
+                    style=LOG_WARN,
+                )
+            )
+        else:
+            auto_memory_from_text(mem, out)
+        _say("[devai] Session memory step finished.")
 
     def auto_memory_after_project_session(mem, task: str, file_names: str) -> None:
         t = task.replace("__", "")[:6000]
         f = file_names.replace("__", "")[:4000]
         prompt = MEMORY_EXTRACT_PROJECT.replace("__TASK__", t).replace("__FILES__", f)
-        out = run_codex(
+        _say(
+            "[devai] Saving session memory (extra Codex call) — "
+            "wait for DONE before the next prompt."
+        )
+        out, _err, rc = run_codex(
             prompt,
             "Codex: updating persistent context...",
         )
-        auto_memory_from_text(mem, out)
+        if rc != 0:
+            console.print(
+                Text(
+                    f"[devai] Session memory update skipped (Codex exit {rc}).",
+                    style=LOG_WARN,
+                )
+            )
+        else:
+            auto_memory_from_text(mem, out)
+        _say("[devai] Session memory step finished.")
 
     def extract_files(text):
         pattern = r"FILE:\s*(.*?)\n([\s\S]*?)(?=FILE:|$)"
@@ -547,10 +700,7 @@ No markdown, no other text."""
         for name, content in files.items():
             with open(name, "w") as f:
                 f.write(content)
-            line = Text()
-            line.append("\u2713 ", style=MUTED)
-            line.append(f"{name} created", style=SUBTITLE)
-            console.print(line)
+            _say(f"  [ok] wrote {name}")
 
     def _pick_entry(paths: List[str], preferred_basenames: List[str]) -> str:
         for pref in preferred_basenames:
@@ -586,21 +736,10 @@ No markdown, no other text."""
             )
             abs_p = os.path.abspath(target)
             work = os.path.dirname(abs_p) or os.getcwd()
-            with console.status(
-                _busy_status_text(
-                    "Running script…",
-                    "Still running — wait for the spinner to stop (scripts may take a while).",
-                ),
-                spinner="dots12",
-                spinner_style="#be5555",
-                refresh_per_second=12,
-            ):
-                proc = subprocess.run(
-                    [sys.executable, abs_p],
-                    cwd=work,
-                    capture_output=True,
-                    text=True,
-                )
+            proc = _run_with_ascii_progress(
+                "run python script",
+                lambda: _run_proc([sys.executable, abs_p], cwd=work),
+            )
             if proc.stdout and proc.stdout.strip():
                 console.print(Text(proc.stdout.rstrip(), style=DIM))
             if proc.returncode != 0 and proc.stderr and proc.stderr.strip():
@@ -615,21 +754,10 @@ No markdown, no other text."""
                 )
                 abs_p = os.path.abspath(target)
                 work = os.path.dirname(abs_p) or os.getcwd()
-                with console.status(
-                    _busy_status_text(
-                        "Running Node script…",
-                        "Still running — wait for the spinner to stop.",
-                    ),
-                    spinner="dots12",
-                    spinner_style="#be5555",
-                    refresh_per_second=12,
-                ):
-                    proc = subprocess.run(
-                        [node, abs_p],
-                        cwd=work,
-                        capture_output=True,
-                        text=True,
-                    )
+                proc = _run_with_ascii_progress(
+                    "run node script",
+                    lambda: _run_proc([node, abs_p], cwd=work),
+                )
                 if proc.stdout and proc.stdout.strip():
                     console.print(Text(proc.stdout.rstrip(), style=DIM))
                 if proc.returncode != 0 and proc.stderr and proc.stderr.strip():
@@ -639,16 +767,10 @@ No markdown, no other text."""
             target = _pick_entry(html_paths, ["index.html", "main.html"])
             abs_p = os.path.abspath(target)
             uri = Path(abs_p).as_uri()
-            with console.status(
-                _busy_status_text(
-                    "Opening preview in your browser…",
-                    "Working — your browser should open when this spinner stops.",
-                ),
-                spinner="dots12",
-                spinner_style="#be5555",
-                refresh_per_second=12,
-            ):
-                webbrowser.open(uri)
+            _run_with_ascii_progress(
+                "open browser",
+                lambda: webbrowser.open(uri),
+            )
 
     def get_diff(old, new):
         diff = difflib.unified_diff(
@@ -704,13 +826,37 @@ No markdown, no other text."""
                 )
                 continue
 
+            session_tokens["codex"] = 0
+            session_tokens["gemini"] = 0
+
             trace_doing(
                 "I'm having Codex classify this turn: full build pipeline versus a direct conversational reply (using your text and saved context)."
             )
-            router_raw = run_codex(
+            router_raw, router_err, router_rc = run_codex(
                 build_router_prompt(task, mem_block),
                 "Codex: routing (build vs conversation)...",
             )
+            if router_rc != 0:
+                trace_done(
+                    "Routing failed; not guessing BUILD/CHAT. Fix the error below, then retry."
+                )
+                console.print()
+                _say(f"[devai] ERROR: Codex routing exited with code {router_rc}.")
+                if (router_err or "").strip():
+                    clip = (router_err or "").strip()[:1200]
+                    if len((router_err or "").strip()) > 1200:
+                        clip += "..."
+                    console.print(Text(clip, style=LOG_ERR))
+                console.print(
+                    Text(
+                        "Hint: devai runs `codex exec --skip-git-repo-check`. "
+                        "If this persists, check `codex` on PATH and disk permissions.",
+                        style=MUTED,
+                    )
+                )
+                console.print()
+                _token_turn_footer()
+                continue
             mode, chat_reply = parse_build_or_chat(router_raw)
 
             if mode == "chat":
@@ -725,6 +871,8 @@ No markdown, no other text."""
                 console.print()
                 console.print(chat_reply or "(empty reply)")
                 console.print()
+                _token_turn_footer()
+                _say("[devai] Turn finished. What would you like to do next?")
                 continue
 
             trace_done(
@@ -737,10 +885,30 @@ No markdown, no other text."""
             trace_doing(
                 "I'm calling Codex with your task, CODEX.md rules, and any saved memory so I can get a first implementation pass."
             )
-            raw = run_codex(
+            raw, draft_err, draft_rc = run_codex(
                 f"{mem_block}{CODEX_RULES}\n\nTASK:\n{task}",
                 "Codex: drafting initial implementation...",
             )
+            if draft_rc != 0:
+                trace_done(
+                    "Codex draft failed; no FILE: blocks or code to continue with."
+                )
+                console.print()
+                _say(f"[devai] ERROR: Codex draft exited with code {draft_rc}.")
+                if (draft_err or "").strip():
+                    clip = (draft_err or "").strip()[:1200]
+                    if len((draft_err or "").strip()) > 1200:
+                        clip += "..."
+                    console.print(Text(clip, style=LOG_ERR))
+                console.print(
+                    Text(
+                        "Set DEVAI_CODEX_WORKDIR to your project folder if Codex should write elsewhere.",
+                        style=MUTED,
+                    )
+                )
+                console.print()
+                _token_turn_footer()
+                continue
             trace_done(
                 "Codex finished; I'm inspecting the response for FILE: blocks (multi-file) versus a single code blob."
             )
@@ -752,7 +920,7 @@ No markdown, no other text."""
                 trace_doing(
                     f"I'm writing {len(files)} file(s) from Codex's FILE: layout, then I'll run preview/script hooks if the extensions match."
                 )
-                console.print(section_panel("PROJECT MODE"))
+                section_heading("PROJECT MODE")
                 console.print()
                 write_files(files)
                 console.print()
@@ -764,6 +932,8 @@ No markdown, no other text."""
                 auto_memory_after_project_session(
                     memory, task, ", ".join(sorted(files.keys()))
                 )
+                _token_turn_footer()
+                _say("[devai] Turn finished. What would you like to do next?")
                 continue
 
             code = extract_code(raw)
@@ -785,10 +955,29 @@ No markdown, no other text."""
             trace_doing(
                 "I'm calling Gemini now to critique the draft (risks, style, missing pieces)—independent of Codex's voice."
             )
-            review = run_gemini(
+            review, gem_rev_err, gem_rev_rc = run_gemini(
                 f"{mem_block}{GEMINI_RULES}\n\nCODE:\n{code}",
                 "Gemini: writing structured review...",
             )
+            if gem_rev_rc != 0:
+                trace_done("Gemini review failed; stopping this build turn.")
+                console.print()
+                _say(f"[devai] ERROR: Gemini exited with code {gem_rev_rc}.")
+                if (gem_rev_err or "").strip():
+                    clip = (gem_rev_err or "").strip()[:1200]
+                    if len((gem_rev_err or "").strip()) > 1200:
+                        clip += "..."
+                    console.print(Text(clip, style=LOG_ERR))
+                console.print(
+                    Text(
+                        "Free-tier quotas or network issues can cause long waits or failures. "
+                        "Try again or set DEVAI_SUBPROCESS_TIMEOUT_SEC.",
+                        style=MUTED,
+                    )
+                )
+                console.print()
+                _token_turn_footer()
+                continue
             trace_done(
                 "Review is back; I'm going to feed Gemini's text to Codex as the sole improvement signal."
             )
@@ -804,7 +993,7 @@ No markdown, no other text."""
             trace_doing(
                 "I'm calling Codex again with the original code, Gemini's review, and the same generation rules so it can revise in place."
             )
-            improved_raw = run_codex(
+            improved_raw, imp_err, imp_rc = run_codex(
                 f"""
 {mem_block}{CODEX_RULES}
 
@@ -821,6 +1010,20 @@ Return ONLY code.
 """,
                 "Codex: applying Gemini feedback...",
             )
+            if imp_rc != 0:
+                console.print(
+                    Text(
+                        f"[devai] WARNING: Codex revision exited with code {imp_rc}; "
+                        "using the first draft for diff/summary.",
+                        style=LOG_WARN,
+                    )
+                )
+                if (imp_err or "").strip():
+                    clip = (imp_err or "").strip()[:800]
+                    if len((imp_err or "").strip()) > 800:
+                        clip += "..."
+                    console.print(Text(clip, style=LOG_WARN))
+                improved_raw = raw
             improved = extract_code(improved_raw)
             trace_done(
                 "Revision is in; I'm computing a unified diff between the first and second Codex outputs next."
@@ -851,7 +1054,7 @@ Return ONLY code.
             trace_doing(
                 "I'm sending both versions to Gemini and asking for a short recap of what got better—not another code edit."
             )
-            summary = run_gemini(
+            summary, gem_sum_err, gem_sum_rc = run_gemini(
                 f"""
 {mem_block}{GEMINI_RULES}
 
@@ -865,8 +1068,23 @@ NEW:
 """,
                 "Gemini: summarizing improvements...",
             )
+            if gem_sum_rc != 0:
+                summary = (
+                    f"(Gemini summary unavailable: CLI exited with code {gem_sum_rc}.)"
+                )
+                if (gem_sum_err or "").strip():
+                    summary += "\n" + (gem_sum_err or "").strip()[:600]
+                console.print(
+                    Text(
+                        "[devai] WARNING: Gemini summary step failed; see placeholder text in Summary section.",
+                        style=LOG_WARN,
+                    )
+                )
+            _say(
+                "[devai] Gemini summary step finished; printing the summary text below."
+            )
             trace_done(
-                "Summary is done; I'm persisting durable session notes via Codex next, then this turn is complete."
+                "Summary text received; next I persist session memory (another Codex call), then this turn ends."
             )
             console.print()
 
@@ -876,6 +1094,8 @@ NEW:
             console.print()
 
             auto_memory_after_code_session(memory, task, summary)
+            _token_turn_footer()
+            _say("[devai] Turn finished. What would you like to do next?")
 
         except KeyboardInterrupt:
             console.print()
