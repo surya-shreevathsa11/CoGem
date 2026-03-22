@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Boot palette (24-bit ANSI) — matches devai rose theme, not plain white
+# Boot palette (24-bit ANSI) — matches cogem rose theme, not plain white
 _BOOT_ROSE = "\033[38;2;190;85;85m"
 _BOOT_SOFT = "\033[38;2;255;175;175m"
 _BOOT_BLUSH = "\033[38;2;255;200;200m"
@@ -91,7 +91,7 @@ def boot_sequence() -> bool:
         _boot_type_line(row, 0.002, _BOOT_BLUSH)
     sys.stdout.write("\n")
     sys.stdout.flush()
-    _boot_type_line("devai · build → review → evolve", 0.008, _BOOT_ROSE)
+    _boot_type_line("cogem · build → review → evolve", 0.008, _BOOT_ROSE)
     sys.stdout.write("\n")
     sys.stdout.flush()
 
@@ -105,7 +105,7 @@ def boot_sequence() -> bool:
         sys.stdout.write("\n")
         sys.stdout.flush()
         sys.stdout.write(
-            f"{_BOOT_ERR}devai cannot start: `codex` is not on PATH.{_BOOT_RESET}\n"
+            f"{_BOOT_ERR}cogem cannot start: `codex` is not on PATH.{_BOOT_RESET}\n"
         )
         sys.stdout.write(
             f"{_BOOT_MUTED}Install the Codex CLI and ensure it is initialized, then try again.{_BOOT_RESET}\n"
@@ -121,7 +121,7 @@ def boot_sequence() -> bool:
         sys.stdout.write("\n")
         sys.stdout.flush()
         sys.stdout.write(
-            f"{_BOOT_ERR}devai cannot start: `gemini` is not on PATH.{_BOOT_RESET}\n"
+            f"{_BOOT_ERR}cogem cannot start: `gemini` is not on PATH.{_BOOT_RESET}\n"
         )
         sys.stdout.write(
             f"{_BOOT_MUTED}Install the Gemini CLI and ensure it is on your PATH, then try again.{_BOOT_RESET}\n"
@@ -284,7 +284,7 @@ def main():
         session_tokens[provider] = session_tokens.get(provider, 0) + n
         console.print(
             Text(
-                f"[devai] Tokens (~{provider} this call): {n}  "
+                f"[cogem] Tokens (~{provider} this call): {n}  "
                 f"(running total this turn ~{session_tokens[provider]})",
                 style=MUTED,
             )
@@ -297,7 +297,7 @@ def main():
         if c == 0 and g == 0:
             console.print(
                 Text(
-                    "[devai] Token usage: no counts found in CLI output this turn "
+                    "[cogem] Token usage: no counts found in CLI output this turn "
                     "(free-tier CLIs often omit usage; check provider dashboards if needed).",
                     style=MUTED,
                 )
@@ -305,14 +305,14 @@ def main():
         else:
             console.print(
                 Text(
-                    f"[devai] Token estimates this turn (parsed from CLI text): "
+                    f"[cogem] Token estimates this turn (parsed from CLI text): "
                     f"codex ~{c}, gemini ~{g}",
                     style=MUTED,
                 )
             )
 
     def _subprocess_timeout_sec() -> Optional[int]:
-        raw = os.environ.get("DEVAI_SUBPROCESS_TIMEOUT_SEC", "").strip()
+        raw = os.environ.get("COGEM_SUBPROCESS_TIMEOUT_SEC", "").strip()
         if not raw:
             return None
         try:
@@ -328,15 +328,15 @@ def main():
 
     def _say(msg: str) -> None:
         """Colored narration (Rich); readable in every terminal that supports ANSI."""
-        if msg.startswith("[devai] START:"):
+        if msg.startswith("[cogem] START:"):
             console.print(Text(msg, style=LOG_START))
-        elif msg.startswith("[devai] DONE:"):
+        elif msg.startswith("[cogem] DONE:"):
             console.print(Text(msg, style=LOG_DONE))
-        elif msg.startswith("[devai] WARNING"):
+        elif msg.startswith("[cogem] WARNING"):
             console.print(Text(msg, style=LOG_WARN))
-        elif msg.startswith("[devai] ERROR"):
+        elif msg.startswith("[cogem] ERROR"):
             console.print(Text(msg, style=LOG_ERR))
-        elif msg.startswith("[devai]"):
+        elif msg.startswith("[cogem]"):
             console.print(Text(msg, style=TITLE))
         elif msg.startswith("  ") and (" > " in msg or " ok " in msg):
             console.print(Text(msg, style=LOG_TRACE))
@@ -349,7 +349,7 @@ def main():
         preview = _task_preview(task, 88)
         mem_on = bool(mem_block and mem_block.strip())
         _say("")
-        _say("[devai] Thinking (build)")
+        _say("[cogem] Thinking (build)")
         _say(f"  request: {preview}")
         _say(
             "  context: prior notes are included in Codex/Gemini prompts."
@@ -362,7 +362,7 @@ def main():
     def live_reasoning_banner_chat(task: str) -> None:
         preview = _task_preview(task, 88)
         _say("")
-        _say("[devai] Thinking (conversation)")
+        _say("[cogem] Thinking (conversation)")
         _say(f"  request: {preview}")
         _say("  next: showing routed reply below (no code pipeline).")
         _say("")
@@ -389,7 +389,7 @@ def main():
         """
         import sys as _sys
 
-        _say(f"[devai] START: {label}")
+        _say(f"[cogem] START: {label}")
         stop = threading.Event()
         t0 = time.monotonic()
         frames = "|/-\\"
@@ -423,7 +423,7 @@ def main():
             _sys.stdout.write("\r" + (" " * 80) + "\r\n")
             _sys.stdout.flush()
         elapsed = time.monotonic() - t0
-        _say(f"[devai] DONE:  {label}  ({elapsed:.1f}s)")
+        _say(f"[cogem] DONE:  {label}  ({elapsed:.1f}s)")
         return out
 
     def run_cmd(
@@ -439,8 +439,8 @@ def main():
                 return subprocess.run(cmd, **kw)
             except subprocess.TimeoutExpired:
                 _say(
-                    f"[devai] ERROR: subprocess timed out after {to}s "
-                    f"(set DEVAI_SUBPROCESS_TIMEOUT_SEC or fix the CLI hang)."
+                    f"[cogem] ERROR: subprocess timed out after {to}s "
+                    f"(set COGEM_SUBPROCESS_TIMEOUT_SEC or fix the CLI hang)."
                 )
                 raise
 
@@ -448,7 +448,7 @@ def main():
             result = _run_with_ascii_progress(status_msg, _run)
             if result.returncode != 0:
                 _say(
-                    f"[devai] WARNING: process exited with code {result.returncode}"
+                    f"[cogem] WARNING: process exited with code {result.returncode}"
                 )
                 err = (result.stderr or "").strip()
                 if err:
@@ -459,7 +459,7 @@ def main():
         return result.stdout or "", result.stderr or "", result.returncode
 
     def _auto_permissions_from_env() -> Optional[bool]:
-        raw = os.environ.get("DEVAI_AUTO_PERMISSIONS", "").strip().lower()
+        raw = os.environ.get("COGEM_AUTO_PERMISSIONS", "").strip().lower()
         if raw in ("1", "y", "yes", "true", "on"):
             return True
         if raw in ("0", "n", "no", "false", "off"):
@@ -469,7 +469,7 @@ def main():
     def ensure_auto_permissions() -> None:
         """
         Codex/Gemini often block in headless mode until approvals are granted.
-        Ask once per session (or use DEVAI_AUTO_PERMISSIONS=yes|no).
+        Ask once per session (or use COGEM_AUTO_PERMISSIONS=yes|no).
         """
         if auto_permissions["granted"] is not None:
             return
@@ -481,8 +481,8 @@ def main():
             auto_permissions["granted"] = False
             console.print(
                 Text(
-                    "[devai] Non-interactive stdin: not prompting for Codex/Gemini permissions. "
-                    "Set DEVAI_AUTO_PERMISSIONS=yes if builds hang or fail.",
+                    "[cogem] Non-interactive stdin: not prompting for Codex/Gemini permissions. "
+                    "Set COGEM_AUTO_PERMISSIONS=yes if builds hang or fail.",
                     style=LOG_WARN,
                 )
             )
@@ -498,19 +498,19 @@ def main():
         )
         console.print(
             Text(
-                "Tip: set DEVAI_AUTO_PERMISSIONS=yes or no to skip this prompt.",
+                "Tip: set COGEM_AUTO_PERMISSIONS=yes or no to skip this prompt.",
                 style=MUTED,
             )
         )
         ans = console.input(
-            Text("Allow both for this devai session? [y/N]: ", style=TITLE)
+            Text("Allow both for this cogem session? [y/N]: ", style=TITLE)
         ).strip().lower()
         auto_permissions["granted"] = ans in ("y", "yes")
         if not auto_permissions["granted"]:
             console.print(
                 Text(
                     "Continuing without --full-auto / --yolo. If subprocesses hang or exit with "
-                    "approval errors, re-run with DEVAI_AUTO_PERMISSIONS=yes.",
+                    "approval errors, re-run with COGEM_AUTO_PERMISSIONS=yes.",
                     style=LOG_WARN,
                 )
             )
@@ -520,7 +520,7 @@ def main():
         argv = ["codex", "exec", "--skip-git-repo-check"]
         if auto_permissions.get("granted"):
             argv.append("--full-auto")
-        wd = os.environ.get("DEVAI_CODEX_WORKDIR", "").strip()
+        wd = os.environ.get("COGEM_CODEX_WORKDIR", "").strip()
         if wd:
             argv.extend(["-C", os.path.abspath(wd)])
         argv.append(prompt)
@@ -545,8 +545,8 @@ def main():
             return subprocess.run(args, **kw)
         except subprocess.TimeoutExpired:
             _say(
-                f"[devai] ERROR: subprocess timed out after {to}s "
-                f"(set DEVAI_SUBPROCESS_TIMEOUT_SEC)."
+                f"[cogem] ERROR: subprocess timed out after {to}s "
+                f"(set COGEM_SUBPROCESS_TIMEOUT_SEC)."
             )
             raise
 
@@ -566,7 +566,7 @@ def main():
         match = re.search(r"```(?:\w+)?\n([\s\S]*?)```", text)
         return match.group(1).strip() if match else text
 
-    ROUTER_TEMPLATE = """You route input for DevAI, a CLI that runs a Codex+Gemini coding workflow.
+    ROUTER_TEMPLATE = """You route input for Cogem, a CLI that runs a Codex+Gemini coding workflow.
 
 Saved project context (memory.json)—use it when mode is CHAT so answers stay consistent (name, stack, notes, etc.):
 ---
@@ -638,7 +638,7 @@ __TASK__
                 rest = "\n".join(parts).strip()
                 if not rest:
                     rest = (
-                        "I'm DevAI: when you describe something to build or code to change, "
+                        "I'm Cogem: when you describe something to build or code to change, "
                         "I'll run the full loop. What would you like to work on?"
                     )
                 return "chat", rest
@@ -779,7 +779,7 @@ __TASK__
             save_memory(mem)
         return changed
 
-    MEMORY_EXTRACT_SESSION = """You update long-lived session memory for DevAI after a coding run finished.
+    MEMORY_EXTRACT_SESSION = """You update long-lived session memory for Cogem after a coding run finished.
 
 User task:
 ---
@@ -801,7 +801,7 @@ or a single line: NONE
 Persist only durable facts that should influence future sessions. If nothing is worth saving, output exactly NONE.
 No markdown, no other text."""
 
-    MEMORY_EXTRACT_PROJECT = """You update long-lived session memory for DevAI after multi-file output was written.
+    MEMORY_EXTRACT_PROJECT = """You update long-lived session memory for Cogem after multi-file output was written.
 
 User task:
 ---
@@ -837,7 +837,7 @@ No markdown, no other text."""
             MEMORY_EXTRACT_SESSION.replace("__TASK__", t).replace("__SUMMARY__", s)
         )
         _say(
-            "[devai] Saving session memory (extra Codex call) — "
+            "[cogem] Saving session memory (extra Codex call) — "
             "you will see START/DONE lines below; this is not stuck."
         )
         out, _err, rc = run_codex(
@@ -847,20 +847,20 @@ No markdown, no other text."""
         if rc != 0:
             console.print(
                 Text(
-                    f"[devai] Session memory update skipped (Codex exit {rc}).",
+                    f"[cogem] Session memory update skipped (Codex exit {rc}).",
                     style=LOG_WARN,
                 )
             )
         else:
             auto_memory_from_text(mem, out)
-        _say("[devai] Session memory step finished.")
+        _say("[cogem] Session memory step finished.")
 
     def auto_memory_after_project_session(mem, task: str, file_names: str) -> None:
         t = task.replace("__", "")[:6000]
         f = file_names.replace("__", "")[:4000]
         prompt = MEMORY_EXTRACT_PROJECT.replace("__TASK__", t).replace("__FILES__", f)
         _say(
-            "[devai] Saving session memory (extra Codex call) — "
+            "[cogem] Saving session memory (extra Codex call) — "
             "wait for DONE before the next prompt."
         )
         out, _err, rc = run_codex(
@@ -870,13 +870,13 @@ No markdown, no other text."""
         if rc != 0:
             console.print(
                 Text(
-                    f"[devai] Session memory update skipped (Codex exit {rc}).",
+                    f"[cogem] Session memory update skipped (Codex exit {rc}).",
                     style=LOG_WARN,
                 )
             )
         else:
             auto_memory_from_text(mem, out)
-        _say("[devai] Session memory step finished.")
+        _say("[cogem] Session memory step finished.")
 
     def extract_files(text):
         pattern = r"FILE:\s*(.*?)\n([\s\S]*?)(?=FILE:|$)"
@@ -985,7 +985,7 @@ No markdown, no other text."""
             if first_turn:
                 console.print(Rule(style=BORDER))
                 header = Text()
-                header.append("devai", style=TITLE)
+                header.append("cogem", style=TITLE)
                 header.append("  ", style="")
                 header.append("dual-agent loop", style=SUBTITLE)
                 console.print(header)
@@ -1030,7 +1030,7 @@ No markdown, no other text."""
                     "Routing failed; not guessing BUILD/CHAT. Fix the error below, then retry."
                 )
                 console.print()
-                _say(f"[devai] ERROR: Codex routing exited with code {router_rc}.")
+                _say(f"[cogem] ERROR: Codex routing exited with code {router_rc}.")
                 if (router_err or "").strip():
                     clip = (router_err or "").strip()[:1200]
                     if len((router_err or "").strip()) > 1200:
@@ -1038,7 +1038,7 @@ No markdown, no other text."""
                     console.print(Text(clip, style=LOG_ERR))
                 console.print(
                     Text(
-                        "Hint: devai runs `codex exec --skip-git-repo-check`. "
+                        "Hint: cogem runs `codex exec --skip-git-repo-check`. "
                         "If this persists, check `codex` on PATH and disk permissions.",
                         style=MUTED,
                     )
@@ -1064,7 +1064,7 @@ No markdown, no other text."""
                 console.print(chat_reply or "(empty reply)")
                 console.print()
                 _token_turn_footer()
-                _say("[devai] Turn finished. What would you like to do next?")
+                _say("[cogem] Turn finished. What would you like to do next?")
                 continue
 
             trace_done(
@@ -1086,7 +1086,7 @@ No markdown, no other text."""
                     "Codex draft failed; no FILE: blocks or code to continue with."
                 )
                 console.print()
-                _say(f"[devai] ERROR: Codex draft exited with code {draft_rc}.")
+                _say(f"[cogem] ERROR: Codex draft exited with code {draft_rc}.")
                 if (draft_err or "").strip():
                     clip = (draft_err or "").strip()[:1200]
                     if len((draft_err or "").strip()) > 1200:
@@ -1094,7 +1094,7 @@ No markdown, no other text."""
                     console.print(Text(clip, style=LOG_ERR))
                 console.print(
                     Text(
-                        "Set DEVAI_CODEX_WORKDIR to your project folder if Codex should write elsewhere.",
+                        "Set COGEM_CODEX_WORKDIR to your project folder if Codex should write elsewhere.",
                         style=MUTED,
                     )
                 )
@@ -1125,7 +1125,7 @@ No markdown, no other text."""
                     memory, task, ", ".join(sorted(files.keys()))
                 )
                 _token_turn_footer()
-                _say("[devai] Turn finished. What would you like to do next?")
+                _say("[cogem] Turn finished. What would you like to do next?")
                 continue
 
             code = extract_code(raw)
@@ -1154,7 +1154,7 @@ No markdown, no other text."""
             if gem_rev_rc != 0:
                 trace_done("Gemini review failed; stopping this build turn.")
                 console.print()
-                _say(f"[devai] ERROR: Gemini exited with code {gem_rev_rc}.")
+                _say(f"[cogem] ERROR: Gemini exited with code {gem_rev_rc}.")
                 if (gem_rev_err or "").strip():
                     clip = (gem_rev_err or "").strip()[:1200]
                     if len((gem_rev_err or "").strip()) > 1200:
@@ -1163,7 +1163,7 @@ No markdown, no other text."""
                 console.print(
                     Text(
                         "Free-tier quotas or network issues can cause long waits or failures. "
-                        "Try again or set DEVAI_SUBPROCESS_TIMEOUT_SEC.",
+                        "Try again or set COGEM_SUBPROCESS_TIMEOUT_SEC.",
                         style=MUTED,
                     )
                 )
@@ -1205,7 +1205,7 @@ Return ONLY code.
             if imp_rc != 0:
                 console.print(
                     Text(
-                        f"[devai] WARNING: Codex revision exited with code {imp_rc}; "
+                        f"[cogem] WARNING: Codex revision exited with code {imp_rc}; "
                         "using the first draft for diff/summary.",
                         style=LOG_WARN,
                     )
@@ -1268,12 +1268,12 @@ NEW:
                     summary += "\n" + (gem_sum_err or "").strip()[:600]
                 console.print(
                     Text(
-                        "[devai] WARNING: Gemini summary step failed; see placeholder text in Summary section.",
+                        "[cogem] WARNING: Gemini summary step failed; see placeholder text in Summary section.",
                         style=LOG_WARN,
                     )
                 )
             _say(
-                "[devai] Gemini summary step finished; printing the summary text below."
+                "[cogem] Gemini summary step finished; printing the summary text below."
             )
             trace_done(
                 "Summary text received; next I persist session memory (another Codex call), then this turn ends."
@@ -1287,13 +1287,13 @@ NEW:
 
             auto_memory_after_code_session(memory, task, summary)
             _token_turn_footer()
-            _say("[devai] Turn finished. What would you like to do next?")
+            _say("[cogem] Turn finished. What would you like to do next?")
 
         except KeyboardInterrupt:
             console.print()
             console.print(
                 Text(
-                    "Press Ctrl+C again to exit devai.",
+                    "Press Ctrl+C again to exit cogem.",
                     style=MUTED,
                 )
             )

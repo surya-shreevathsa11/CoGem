@@ -1,4 +1,4 @@
-# AI Dev Engine (Codex + Gemini Workflow)
+# Cogem (Codex + Gemini Workflow)
 
 A CLI-based development system that combines:
 - Codex → code generation
@@ -29,7 +29,7 @@ This creates a self-improving coding workflow that works for:
 ```
 ai_automation/
 │
-├── devai/
+├── cogem/
 │   ├── cli.py
 │   └── __init__.py
 │
@@ -48,13 +48,13 @@ ai_automation/
 | Component | Purpose |
 |-----------|---------|
 | **WSL** (Windows) | Recommended environment on Windows; use a Linux distro (e.g. Ubuntu) for Node + Python + CLIs |
-| **Python 3** | Runs `devai` (via pipx) |
-| **pipx** | Isolated install of the `devai` command |
+| **Python 3** | Runs `cogem` (via pipx) |
+| **pipx** | Isolated install of the `cogem` command |
 | **Node.js + npm** | Installs **Codex CLI** and **Gemini CLI** globally |
 | **Codex CLI** (`codex`) | OpenAI Codex — generation (`codex exec …`) |
 | **Gemini CLI** (`gemini`) | Google Gemini — review (`gemini -p …`) |
 
-On Windows you can run `devai` without WSL if `codex` and `gemini` are already on your `PATH` (same npm global install as below).
+On Windows you can run `cogem` without WSL if `codex` and `gemini` are already on your `PATH` (same npm global install as below).
 
 ---
 
@@ -174,7 +174,7 @@ npm install -g @google/gemini-cli@latest
 npx @google/gemini-cli --help
 ```
 
-`devai` expects the `gemini` command on `PATH`, so prefer a global install for daily use.
+`cogem` expects the `gemini` command on `PATH`, so prefer a global install for daily use.
 
 ### Verify
 
@@ -187,19 +187,27 @@ Complete **Sign in with Google** or set **`GEMINI_API_KEY`** as described in the
 
 ---
 
-## Part E — This project (devai)
+## Part E — This project (cogem)
 
 ### 1. Get the code
 
 ```bash
 cd ~
-git clone https://github.com/surya-shreevathsa11.git
-cd <your-fork>
+git clone https://github.com/<your-username>/<your-repo>.git
+cd <your-repo>
 ```
 
 Or clone your repo URL and `cd` into it.
 
-### 2. Install the `devai` command
+### 2. Install the `cogem` command
+
+If you still have the old `devai` package from an earlier install:
+
+```bash
+pipx uninstall devai
+```
+
+Then:
 
 ```bash
 pipx install -e .
@@ -208,7 +216,7 @@ pipx install -e .
 ### 3. Run
 
 ```bash
-devai
+cogem
 ```
 
 ---
@@ -218,7 +226,7 @@ devai
 ### General pattern
 
 ```
-devai
+cogem
 >>> your task
 ```
 
@@ -298,6 +306,16 @@ pipx install -e . --force
 
 ---
 
+## Environment variables (optional)
+
+| Variable | Purpose |
+|----------|---------|
+| `COGEM_AUTO_PERMISSIONS` | `yes` / `no` — skip the interactive prompt for Codex `--full-auto` and Gemini `--yolo` |
+| `COGEM_CODEX_WORKDIR` | Absolute path passed to Codex `-C` (workspace root) |
+| `COGEM_SUBPROCESS_TIMEOUT_SEC` | Integer seconds; abort a stuck `codex` / `gemini` subprocess after this time |
+
+---
+
 ## Quick reference (copy-paste)
 
 **WSL (PowerShell, admin):** `wsl --install`  
@@ -310,4 +328,4 @@ pipx install -e . --force
 
 **Gemini CLI:** `npm install -g @google/gemini-cli`  
 
-**DevAI:** `pipx install -e .` then `devai`  
+**Cogem:** `pipx install -e .` then `cogem`  
