@@ -139,7 +139,7 @@ Official package: **`@openai/codex`**. See [openai/codex](https://github.com/ope
 ### Install globally
 
 ```bash
-npm install -g @openai/codex
+sudo npm install -g @openai/codex
 ```
 
 ### Verify
