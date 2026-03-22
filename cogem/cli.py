@@ -285,6 +285,178 @@ def main():
             + "\n\n---\n\n"
         )
 
+    _AT_MENTION = re.compile(r'@"([^"]+)"|@\'([^\']+)\'|@([^\s@]+)')
+
+    def _mention_roots_list() -> List[str]:
+        roots: List[str] = []
+        for r in (ROOT, os.getcwd()):
+            try:
+                rp = os.path.realpath(r)
+                if os.path.isfile(rp):
+                    rp = os.path.dirname(rp)
+                if os.path.isdir(rp):
+                    roots.append(rp)
+            except OSError:
+                continue
+        wd = os.environ.get("COGEM_CODEX_WORKDIR", "").strip()
+        if wd:
+            try:
+                rp = os.path.realpath(wd)
+                if os.path.isdir(rp):
+                    roots.append(rp)
+            except OSError:
+                pass
+        out: List[str] = []
+        for x in roots:
+            if x not in out:
+                out.append(x)
+        return out
+
+    def _path_allowed_for_mention(abs_path: str, roots: List[str]) -> bool:
+        try:
+            p = os.path.realpath(abs_path)
+        except OSError:
+            return False
+        for root in roots:
+            try:
+                r = os.path.realpath(root)
+                if not os.path.isdir(r):
+                    continue
+                if p == r or p.startswith(r + os.sep):
+                    return True
+            except OSError:
+                continue
+        return False
+
+    def _resolve_mention_path(rel: str) -> Optional[str]:
+        rel = rel.strip()
+        if not rel or rel.startswith("-"):
+            return None
+        candidates: List[str] = []
+        if os.path.isabs(rel):
+            candidates.append(rel)
+        else:
+            candidates.append(os.path.join(os.getcwd(), rel))
+            candidates.append(os.path.join(ROOT, rel))
+        for c in candidates:
+            try:
+                if os.path.lexists(c):
+                    return os.path.realpath(c)
+            except OSError:
+                continue
+        return None
+
+    def _read_file_for_mention(path: str, max_bytes: int) -> str:
+        try:
+            with open(path, "rb") as f:
+                raw = f.read(max_bytes + 1)
+        except OSError as e:
+            return f"[read error: {e}]"
+        if len(raw) > max_bytes:
+            chunk = raw[:max_bytes]
+            if b"\x00" in chunk:
+                return "[binary file omitted]"
+            return (
+                chunk.decode("utf-8", errors="replace")
+                + "\n\n[truncated: file exceeds COGEM_AT_MAX_FILE_BYTES]"
+            )
+        if b"\x00" in raw:
+            return "[binary file omitted]"
+        return raw.decode("utf-8", errors="replace")
+
+    def _dir_listing_for_mention(path: str, max_entries: int) -> str:
+        lines: List[str] = []
+        base = os.path.realpath(path)
+        for root, dirs, files in os.walk(base):
+            depth = root[len(base) :].count(os.sep)
+            if depth > 3:
+                dirs[:] = []
+                continue
+            dirs.sort()
+            files.sort()
+            for name in dirs:
+                fp = os.path.join(root, name)
+                rel = os.path.relpath(fp, base)
+                lines.append(rel + "/")
+                if len(lines) >= max_entries:
+                    return "\n".join(lines) + "\n[directory listing truncated]"
+            for name in files:
+                fp = os.path.join(root, name)
+                rel = os.path.relpath(fp, base)
+                lines.append(rel)
+                if len(lines) >= max_entries:
+                    return "\n".join(lines) + "\n[directory listing truncated]"
+        return "\n".join(lines) if lines else "(empty directory)"
+
+    def expand_at_mentions(raw: str) -> Tuple[str, str]:
+        """Strip @path mentions from task; return (clean_task, attachment_block for prompts)."""
+        if "@" not in raw:
+            return raw, ""
+        roots = _mention_roots_list()
+        try:
+            max_b = max(4096, int(os.environ.get("COGEM_AT_MAX_FILE_BYTES", "400000")))
+        except ValueError:
+            max_b = 400000
+        try:
+            max_total = max(8000, int(os.environ.get("COGEM_AT_MAX_TOTAL_CHARS", "120000")))
+        except ValueError:
+            max_total = 120000
+
+        paths_order: List[str] = []
+
+        def _collect(m) -> str:
+            p = m.group(1) or m.group(2) or m.group(3)
+            if p:
+                paths_order.append(p.strip())
+            return ""
+
+        clean = _AT_MENTION.sub(_collect, raw)
+        clean = re.sub(r"\s+", " ", clean).strip()
+        if not paths_order:
+            return raw, ""
+
+        seen = set()
+        chunks: List[str] = []
+        total = 0
+        for rel in paths_order:
+            if rel in seen:
+                continue
+            seen.add(rel)
+            abs_p = _resolve_mention_path(rel)
+            if not abs_p or not _path_allowed_for_mention(abs_p, roots):
+                chunks.append(
+                    f"### @{rel}\nNot found or not allowed (paths must stay under the project, "
+                    f"current working directory, or COGEM_CODEX_WORKDIR).\n\n"
+                )
+                total += len(chunks[-1])
+                continue
+            try:
+                label = os.path.relpath(abs_p, ROOT)
+            except ValueError:
+                label = abs_p
+            if os.path.isfile(abs_p):
+                body = _read_file_for_mention(abs_p, max_b)
+            elif os.path.isdir(abs_p):
+                body = _dir_listing_for_mention(abs_p, 100)
+            else:
+                body = "[not a file or directory]"
+            block = f"### {label}\n```\n{body}\n```\n\n"
+            if total + len(block) > max_total:
+                chunks.append(
+                    f"[@ context truncated: total size exceeds COGEM_AT_MAX_TOTAL_CHARS={max_total}]\n"
+                )
+                break
+            total += len(block)
+            chunks.append(block)
+
+        if not chunks:
+            return clean or raw, ""
+        header = "## Referenced files and folders (@ mentions)\n\n"
+        attach = header + "".join(chunks) + "---\n\n"
+        if not clean:
+            clean = "(Task text is empty; use the @ references and CODEX.md for intent.)"
+        return clean, attach
+
     def _wall_clock() -> str:
         """Local wall time only (no UTC-style suffix — avoids confusion on Windows)."""
         return time.strftime("%H:%M:%S", time.localtime())
@@ -1038,7 +1210,8 @@ No markdown, no other text."""
                     )
                 console.print(
                     Text(
-                        "Session: /codex/model <MODEL|reset>   /gemini/model <MODEL|reset>",
+                        "Session: /codex/model <MODEL|reset>   /gemini/model <MODEL|reset>   "
+                        "@path @folder (files under project/cwd)",
                         style=MUTED,
                     )
                 )
@@ -1136,6 +1309,17 @@ No markdown, no other text."""
                 console.print(Text(f"Gemini model set to: {rest}", style=TITLE))
                 continue
 
+            task_clean, attach_block = expand_at_mentions(task)
+            if attach_block:
+                n_refs = attach_block.count("### ")
+                console.print(
+                    Text(
+                        f"Loaded {n_refs} path(s) from @ mentions into build context.",
+                        style=MUTED,
+                    )
+                )
+                console.print()
+
             session_tokens["codex"] = 0
             session_tokens["gemini"] = 0
 
@@ -1175,6 +1359,15 @@ No markdown, no other text."""
                 chat_reply = None
 
             if mode == "chat":
+                if attach_block:
+                    console.print(
+                        Text(
+                            "@ file/folder mentions are only inlined for BUILD tasks; "
+                            "they were not sent to this chat reply.",
+                            style=MUTED,
+                        )
+                    )
+                    console.print()
                 trace_done(
                     "Classified as conversation; I'm skipping the code pipeline and surfacing the routed reply next."
                 )
@@ -1201,7 +1394,7 @@ No markdown, no other text."""
                 "I'm calling Codex with your task, CODEX.md rules, and any saved memory so I can get a first implementation pass."
             )
             raw, draft_err, draft_rc = run_codex(
-                f"{mem_block}{CODEX_RULES}\n\nTASK:\n{task}",
+                f"{mem_block}{attach_block}{CODEX_RULES}\n\nTASK:\n{task_clean}\n",
                 "Codex: drafting initial implementation...",
             )
             if draft_rc != 0:
@@ -1271,7 +1464,7 @@ No markdown, no other text."""
                 "I'm calling Gemini now to critique the draft (risks, style, missing pieces)—independent of Codex's voice."
             )
             review, gem_rev_err, gem_rev_rc = run_gemini(
-                f"{mem_block}{GEMINI_RULES}\n\nCODE:\n{code}",
+                f"{mem_block}{attach_block}{GEMINI_RULES}\n\nCODE:\n{code}",
                 "Gemini: writing structured review...",
             )
             if gem_rev_rc != 0:
@@ -1310,7 +1503,7 @@ No markdown, no other text."""
             )
             improved_raw, imp_err, imp_rc = run_codex(
                 f"""
-{mem_block}{CODEX_RULES}
+{mem_block}{attach_block}{CODEX_RULES}
 
 You wrote:
 
@@ -1371,7 +1564,7 @@ Return ONLY code.
             )
             summary, gem_sum_err, gem_sum_rc = run_gemini(
                 f"""
-{mem_block}{GEMINI_RULES}
+{mem_block}{attach_block}{GEMINI_RULES}
 
 Compare and summarize improvements.
 

@@ -338,6 +338,20 @@ While Cogem is running, you can change models without restarting:
 | `/gemini/model <MODEL>` | Use `<MODEL>` for all Gemini calls this session |
 | `/gemini/model reset` | Restore the model from `--gemini-model` / `COGEM_GEMINI_MODEL` |
 
+### @ file and folder mentions
+
+In your task text you can reference paths so their contents are included in **BUILD** prompts (Codex + Gemini):
+
+- `@relative/path/to/file.py` — file contents (UTF-8 text; very large files are truncated)
+- `@src` or `@docs/` — directory tree listing (depth and entry limits apply)
+- `@"path with spaces/file.txt"` — use double quotes inside the `@…` form for spaces
+
+Paths must resolve under the **repo root**, your **current working directory**, or **`COGEM_CODEX_WORKDIR`**. Anything else is skipped with a note in the attachment block.
+
+Optional limits: `COGEM_AT_MAX_FILE_BYTES` (default `400000`), `COGEM_AT_MAX_TOTAL_CHARS` (default `120000`) for the whole attachment block.
+
+`@` references are **not** inlined for pure **CHAT** routing (you’ll see a short notice).
+
 ---
 
 ## Environment variables (optional)
@@ -349,6 +363,8 @@ While Cogem is running, you can change models without restarting:
 | `COGEM_CODEX_MODEL` | Default Codex model when `--codex-model` is not passed |
 | `COGEM_GEMINI_MODEL` | Default Gemini model when `--gemini-model` is not passed |
 | `COGEM_SUBPROCESS_TIMEOUT_SEC` | Integer seconds; abort a stuck `codex` / `gemini` subprocess after this time |
+| `COGEM_AT_MAX_FILE_BYTES` | Max bytes read per `@` file (default `400000`) |
+| `COGEM_AT_MAX_TOTAL_CHARS` | Max total characters for all `@` attachments in one turn (default `120000`) |
 
 ---
 
