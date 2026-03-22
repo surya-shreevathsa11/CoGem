@@ -27,7 +27,7 @@ This creates a self-improving coding workflow that works for:
 ## Project Structure
 
 ```
-DevAi/
+ai_automation/
 │
 ├── devai/
 │   ├── cli.py
@@ -45,103 +45,169 @@ DevAi/
 
 ## Requirements
 
-- WSL (Windows Subsystem for Linux)
-- Python 3
-- pipx
-- Codex CLI
-- Gemini CLI
+| Component | Purpose |
+|-----------|---------|
+| **WSL** (Windows) | Recommended environment on Windows; use a Linux distro (e.g. Ubuntu) for Node + Python + CLIs |
+| **Python 3** | Runs `devai` (via pipx) |
+| **pipx** | Isolated install of the `devai` command |
+| **Node.js + npm** | Installs **Codex CLI** and **Gemini CLI** globally |
+| **Codex CLI** (`codex`) | OpenAI Codex — generation (`codex exec …`) |
+| **Gemini CLI** (`gemini`) | Google Gemini — review (`gemini -p …`) |
+
+On Windows you can run `devai` without WSL if `codex` and `gemini` are already on your `PATH` (same npm global install as below).
 
 ---
 
-## Step 1 — Install WSL (Windows)
+## Part A — WSL (Windows Subsystem for Linux)
 
-Open PowerShell as Administrator:
+Use this when you develop on **Windows** and want Linux tooling in one place.
 
-```
+### 1. Install WSL
+
+Open **PowerShell as Administrator**:
+
+```powershell
 wsl --install
 ```
 
-Restart your system after installation.
+Restart the machine if Windows asks you to. Optionally install a specific distro (example: Ubuntu):
 
----
-
-## Step 2 — Open WSL
-
-After restart:
-
+```powershell
+wsl --install -d Ubuntu
 ```
+
+### 2. Open your distro
+
+From **PowerShell** or **Start menu**:
+
+```powershell
 wsl
 ```
 
----
+Or launch **Ubuntu** (or your distro) from the app list. You should get a Linux shell (`bash`).
 
-## Step 3 — Install dependencies
+### 3. Update packages (inside WSL)
 
-Update system:
-```
+```bash
 sudo apt update && sudo apt upgrade -y
 ```
 
-Install Python and pipx:
-```
-sudo apt install python3 python3-pip pipx -y
+### 4. Install Python and pipx (inside WSL)
+
+```bash
+sudo apt install -y python3 python3-pip pipx
 pipx ensurepath
 ```
 
-Restart terminal or run:
-```
+Reload your shell config:
+
+```bash
 source ~/.bashrc
 ```
 
 ---
 
-## Step 4 — Install CLIs
+## Part B — Node.js and npm (for Codex + Gemini CLIs)
 
-### Codex CLI
+Both official CLIs are published on **npm** and are typically installed **globally**.
 
-Verify:
+### Install Node.js (inside WSL)
+
+Pick one approach:
+
+**Option 1 — distro packages (simple)**
+
+```bash
+sudo apt install -y nodejs npm
 ```
+
+**Option 2 — current LTS (recommended for latest Node)**
+
+Use the [NodeSource setup](https://github.com/nodesource/distributions) or [nvm](https://github.com/nvm-sh/nvm) for your distro, then confirm:
+
+```bash
+node -v
+npm -v
+```
+
+---
+
+## Part C — Codex CLI (npm)
+
+Official package: **`@openai/codex`**. See [openai/codex](https://github.com/openai/codex) and [Codex documentation](https://developers.openai.com/codex).
+
+### Install globally
+
+```bash
+npm install -g @openai/codex
+```
+
+### Verify
+
+```bash
 codex --version
 ```
 
+Run `codex` once and complete sign-in (e.g. ChatGPT or API key) per upstream docs.
+
 ---
 
-### Gemini CLI
+## Part D — Gemini CLI (npm)
 
-Verify:
+Official package: **`@google/gemini-cli`**. See [google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli) and [Gemini CLI docs](https://geminicli.com/docs/).
+
+### Install globally
+
+```bash
+npm install -g @google/gemini-cli
 ```
+
+Optional tags (from upstream):
+
+```bash
+npm install -g @google/gemini-cli@latest
+```
+
+### Run without a global install (npx)
+
+```bash
+npx @google/gemini-cli --help
+```
+
+`devai` expects the `gemini` command on `PATH`, so prefer a global install for daily use.
+
+### Verify
+
+```bash
 gemini --help
-```
-
-Run test:
-```
 gemini -p "hello"
 ```
 
----
-
-## Step 5 — Setup Project
-
-Clone the repository:
-
-```
-git clone https://github.com/<your-username>/DevAi.git
-cd DevAi
-```
+Complete **Sign in with Google** or set **`GEMINI_API_KEY`** as described in the [authentication guide](https://github.com/google-gemini/gemini-cli/blob/main/README.md#-authentication-options).
 
 ---
 
-## Step 6 — Install CLI Tool
+## Part E — This project (devai)
 
+### 1. Get the code
+
+```bash
+cd ~
+git clone https://github.com/<your-username>/<your-fork>.git
+cd <your-fork>
 ```
+
+Or clone your repo URL and `cd` into it.
+
+### 2. Install the `devai` command
+
+```bash
 pipx install -e .
 ```
 
----
+### 3. Run
 
-## Step 7 — Run
-
-```
+```bash
 devai
 ```
 
@@ -156,21 +222,22 @@ devai
 >>> your task
 ```
 
----
-
 ### Examples
 
 Script:
+
 ```
 >>> write python script to rename files in a folder
 ```
 
 Web page:
+
 ```
 >>> create landing page with navbar and hero section
 ```
 
 Backend:
+
 ```
 >>> build node API with login route and JWT authentication
 ```
@@ -191,12 +258,12 @@ Backend:
 
 ## Project Mode
 
-If task includes multiple files:
+If the task includes multiple files:
 
-- system creates files automatically  
-- open in browser:
+- The system creates files automatically  
+- Open HTML in the browser from Windows, from WSL you can use:
 
-```
+```bash
 explorer.exe index.html
 ```
 
@@ -204,30 +271,43 @@ explorer.exe index.html
 
 ## Important Rules
 
-- Always describe what you want, not how to code it  
-- Avoid mixing manual coding with AI workflow  
-- Use separate folders for each project  
+- Describe what you want, not necessarily how to code it  
+- Avoid mixing manual coding with the automated workflow when you want the full loop  
+- Use separate folders per project when it helps  
 
 ---
 
 ## Philosophy
 
-This is not an assistant.
+This is not a generic chat assistant.
 
-This is a controlled development system where:
+It is a controlled development system where:
 - generation is separate from validation  
 - review is independent  
 - improvements are traceable  
 
 ---
 
-## Updating the Tool
+## Updating the tool
 
-After making changes:
+After pulling changes:
 
-```
+```bash
 pipx install -e . --force
 ```
 
 ---
- 
+
+## Quick reference (copy-paste)
+
+**WSL (PowerShell, admin):** `wsl --install`  
+
+**WSL shell:** `sudo apt update && sudo apt upgrade -y`  
+
+**Python + pipx:** `sudo apt install -y python3 python3-pip pipx && pipx ensurepath`  
+
+**Codex CLI:** `npm install -g @openai/codex`  
+
+**Gemini CLI:** `npm install -g @google/gemini-cli`  
+
+**DevAI:** `pipx install -e .` then `devai`  
