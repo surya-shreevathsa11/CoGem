@@ -393,6 +393,8 @@ For **frontend-first** builds (websites, landing pages, dashboards, HTML/CSS/JS 
 3. **Fold** any Stitch output (or your export) into the Codex/Gemini prompts, plus strict rules from `.ai/STITCH_WEBSITE.md`.
 4. **Non-frontend** tasks are unchanged.
 
+**Prerequisite questions first:** If you ask how to do something *before* a build (e.g. *“build a site, but before that tell me how to connect Stitch via MCP”*), cogem treats that turn as **conversation first** — no build pipeline, no Stitch stage. Use **`/build`** on a later turn when you only want implementation.
+
 **Disable** the Stitch stage entirely: `COGEM_STITCH=0` or `cogem --no-stitch`.
 
 **Manual mode** (default when no adapter succeeds): cogem prints a ready-to-paste **Stitch prompt**, then asks for your **exported HTML/CSS** (paste or `@path`). Non-interactive stdin skips the paste step; use `COGEM_STITCH_CLI` or `COGEM_STITCH_HTTP_URL` instead.

@@ -174,6 +174,7 @@ def main():
         try_stitch_adapters,
     )
     from cogem.stitch.adapters import format_stitch_context_for_codex, looks_like_ui_content
+    from cogem.task_intent import build_prerequisite_first_prompt, detect_prerequisite_first_task
 
     _ap = argparse.ArgumentParser(
         prog="cogem",
@@ -839,6 +840,11 @@ Disambiguation (important):
 - "What should I learn next?" → CHAT. "Add auth to my app" → BUILD.
 - If they paste code and ask "is this correct?" or "find the bug" → BUILD (they need engineering help on code).
 - If ambiguous and they might need code changes, prefer BUILD.
+
+Ordered / multi-part requests (critical — read carefully):
+- If the user asks for INFORMATION, SETUP, or HOW-TO *before* implementation (e.g. "before that tell me how…", "first explain how…", "I need to know X before we build Y", "build a site but first how do I connect…"), route as **CHAT** for this turn. Answer the prerequisite in the CHAT reply. They can run a build in a later message.
+- Do **not** route as BUILD when the primary unsatisfied request is explanatory (MCP setup, tool connection, concepts) even if they also mention a future website or app build.
+- Pure implementation with no unanswered prerequisite question → BUILD.
 
 Programming language / stack: If they ask to use or switch language/framework/stack for implementation, that is BUILD.
 
@@ -1739,9 +1745,46 @@ No markdown, no other text."""
                     _token_turn_footer()
                     continue
                 mode, chat_reply = parse_build_or_chat(router_raw)
-                if mode == "chat" and looks_like_build_task(task_clean):
+                if (
+                    mode == "chat"
+                    and looks_like_build_task(task_clean)
+                    and not detect_prerequisite_first_task(task_clean)
+                ):
                     mode = "workflow"
                     chat_reply = None
+
+            if (
+                mode == "workflow"
+                and detect_prerequisite_first_task(task_clean)
+                and session_directive != "build"
+            ):
+                trace_doing(
+                    "Your message asks for something before building; answering that first "
+                    "(skipping Stitch and the full code pipeline this turn)."
+                )
+                pr_raw, pr_err, pr_rc = run_codex(
+                    build_prerequisite_first_prompt(task_clean, mem_block),
+                    "Codex: answering prerequisite question first...",
+                )
+                if pr_rc != 0:
+                    trace_done(
+                        "Prerequisite answer step failed; fix the error below, then retry or use /ask."
+                    )
+                    console.print()
+                    _say(f"[cogem] ERROR: Codex exited with code {pr_rc}.")
+                    if (pr_err or "").strip():
+                        clip = (pr_err or "").strip()[:1200]
+                        if len((pr_err or "").strip()) > 1200:
+                            clip += "..."
+                        console.print(Text(clip, style=LOG_ERR))
+                    console.print()
+                    _token_turn_footer()
+                    continue
+                mode = "chat"
+                chat_reply = (pr_raw or "").strip()
+                trace_done(
+                    "Prerequisite reply ready; skipping build/Stitch for this turn — ask for the build again when ready."
+                )
 
             if mode == "chat":
                 if attach_block:
@@ -1783,7 +1826,12 @@ No markdown, no other text."""
                     + "\n"
                 )
 
-            if stitch_feature_on and mode == "workflow" and frontend_detected:
+            if (
+                stitch_feature_on
+                and mode == "workflow"
+                and frontend_detected
+                and not detect_prerequisite_first_task(task_clean)
+            ):
                 if should_skip_stitch_due_to_attachments(attach_block):
                     trace_done(
                         "Frontend task detected; skipping Stitch because @ attachments already include UI/HTML."
