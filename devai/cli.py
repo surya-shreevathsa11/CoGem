@@ -163,7 +163,6 @@ def main():
     SUBTITLE = "#5f3737"
     MUTED = "#c87878"
     PANEL_FILL = "on #fff0f0"
-    REASON_BORDER = "grey42"
     DIM = "dim"
     ITALIC_DIM = "italic dim"
 
@@ -241,33 +240,77 @@ def main():
             + "\n\n---\n\n"
         )
 
-    def reasoning_block(title: str, paragraphs: List[str]) -> None:
-        body = Text()
-        for i, para in enumerate(paragraphs):
-            if i:
-                body.append("\n\n")
-            body.append(para, style=ITALIC_DIM)
+    def _wall_clock() -> str:
+        return datetime.now().strftime("%H:%M:%S")
+
+    def _task_preview(task: str, max_len: int = 90) -> str:
+        preview = re.sub(r"\s+", " ", task.strip())
+        if len(preview) > max_len:
+            preview = preview[: max_len - 3] + "..."
+        return preview
+
+    def live_reasoning_banner_build(task: str, mem_block: str) -> None:
+        """One-line context; the rest of the run is narrated live as each step executes."""
+        preview = _task_preview(task, 88)
+        mem_on = bool(mem_block and mem_block.strip())
+        console.print()
         console.print(
-            Panel(
-                body,
-                title=Text(title, style=DIM),
-                border_style=REASON_BORDER,
-                padding=(0, 1),
-                expand=False,
+            Rule(Text(" Live reasoning ", style=TITLE), style=BORDER, align="left")
+        )
+        head = Text()
+        head.append("[", style=DIM)
+        head.append(_wall_clock(), style=MUTED)
+        head.append("] ", style=DIM)
+        head.append("Build · ", style=TITLE)
+        head.append(f"«{preview}»", style=ITALIC_DIM)
+        head.append(
+            " · prior-turn notes folded into prompts"
+            if mem_on
+            else " · prompts use only this message + rule files",
+            style=DIM,
+        )
+        console.print(head)
+        console.print(
+            Text(
+                "  Lines below appear as each step actually runs (not ahead of time).",
+                style=DIM,
             )
         )
+        console.print()
 
-    def handoff_line(from_agent: str, to_agent: str, detail: str) -> None:
-        bridge = Text()
-        bridge.append("Handoff  ", style=DIM)
-        bridge.append(from_agent, style=TITLE)
-        bridge.append("  \u2192  ", style=DIM)
-        bridge.append(to_agent, style=TITLE)
-        console.print(bridge)
-        console.print(Text(f"  {detail}", style=ITALIC_DIM))
+    def live_reasoning_banner_chat(task: str) -> None:
+        preview = _task_preview(task, 88)
+        console.print()
+        console.print(
+            Rule(Text(" Live reasoning ", style=TITLE), style=BORDER, align="left")
+        )
+        head = Text()
+        head.append("[", style=DIM)
+        head.append(_wall_clock(), style=MUTED)
+        head.append("] ", style=DIM)
+        head.append("Chat · ", style=TITLE)
+        head.append(f"«{preview}»", style=ITALIC_DIM)
+        console.print(head)
+        console.print()
 
-    def step_done(line: str) -> None:
-        console.print(Text(f"  \u00b7 {line}", style=DIM))
+    def trace_doing(msg: str) -> None:
+        """First-person, present-tense, timestamped when the step starts."""
+        line = Text()
+        line.append("[", style=DIM)
+        line.append(_wall_clock(), style=MUTED)
+        line.append("] ", style=DIM)
+        line.append("\u2192 ", style=TITLE)
+        line.append(msg, style=ITALIC_DIM)
+        console.print(line)
+
+    def trace_done(msg: str) -> None:
+        line = Text()
+        line.append("[", style=DIM)
+        line.append(_wall_clock(), style=MUTED)
+        line.append("] ", style=DIM)
+        line.append("\u2713 ", style=MUTED)
+        line.append(msg, style=DIM)
+        console.print(line)
 
     def section_panel(title: str) -> Panel:
         return Panel(
@@ -631,6 +674,9 @@ No markdown, no other text."""
                 )
                 continue
 
+            trace_doing(
+                "I'm having Codex classify this turn: full build pipeline versus a direct conversational reply (using your text and saved context)."
+            )
             router_raw = run_codex(
                 build_router_prompt(task, mem_block),
                 "Codex: routing (build vs conversation)...",
@@ -638,69 +684,67 @@ No markdown, no other text."""
             mode, chat_reply = parse_build_or_chat(router_raw)
 
             if mode == "chat":
+                trace_done(
+                    "Classified as conversation; I'm skipping the code pipeline and surfacing the routed reply next."
+                )
                 chat_reply, auto_persists = extract_persist_directives(chat_reply)
                 apply_persist_directives(memory, auto_persists)
 
-                console.print()
+                live_reasoning_banner_chat(task)
                 section_rule("Reply")
                 console.print()
                 console.print(chat_reply or "(empty reply)")
                 console.print()
                 continue
 
-            reasoning_block(
-                "Working through your request",
-                [
-                    "I'll unfold this in a few deliberate steps so you can follow each move.",
-                    "I'm lining up Codex with your wording plus anything we keep in memory: stack choices, constraints, past calls, so the first artifact is not starting from a blank slate.",
-                    "Then I'll hand the draft to Gemini as a clean review pass: same code, fresh eyes, so the critique does not parrot Codex's own assumptions.",
-                    "After that I'll carry Gemini's notes straight back to Codex for a revision pass, line up a before/after diff, and ask Gemini for a tight summary of what actually improved.",
-                ],
+            trace_done(
+                "Classified as a build; live narration starts below as each step runs."
             )
-            console.print()
+            live_reasoning_banner_build(task, mem_block)
 
             # ---------- generate ----------
 
-            console.print(Text("Step 1 - first artifact", style=TITLE))
-            step_done("Codex is composing an initial implementation (rules + task + memory context).")
+            trace_doing(
+                "I'm calling Codex with your task, CODEX.md rules, and any saved memory so I can get a first implementation pass."
+            )
             raw = run_codex(
                 f"{mem_block}{CODEX_RULES}\n\nTASK:\n{task}",
                 "Codex: drafting initial implementation...",
             )
-            step_done("Codex finished its pass; I'll inspect whether this is multi-file output or a single snippet.")
+            trace_done(
+                "Codex finished; I'm inspecting the response for FILE: blocks (multi-file) versus a single code blob."
+            )
             console.print()
 
             files = extract_files(raw)
 
             if files:
-                console.print(section_panel("PROJECT MODE"))
-                console.print()
-                handoff_line(
-                    "Codex",
-                    "Workspace",
-                    "Codex returned FILE: blocks, so I'm materializing those paths on disk instead of running the review loop.",
+                trace_doing(
+                    f"I'm writing {len(files)} file(s) from Codex's FILE: layout, then I'll run preview/script hooks if the extensions match."
                 )
+                console.print(section_panel("PROJECT MODE"))
                 console.print()
                 write_files(files)
                 console.print()
                 run_written_artifacts(files)
                 console.print()
+                trace_done(
+                    "Files and any auto-runs are done; I'm asking Codex to fold this project into long-lived memory next."
+                )
                 auto_memory_after_project_session(
                     memory, task, ", ".join(sorted(files.keys()))
                 )
                 continue
 
             code = extract_code(raw)
-            step_done("Treating this as single-artifact mode: I'll route the snippet to Gemini next.")
-            console.print()
-
-            handoff_line(
-                "Codex",
-                "Gemini",
-                "Sending only the candidate code plus review rules. Gemini has not seen Codex's earlier reasoning, so the feedback stays arm's-length.",
+            trace_done(
+                "Single-artifact path: I'm keeping this code and moving to Gemini for a review pass that doesn't see Codex's earlier chat."
             )
             console.print()
 
+            trace_doing(
+                "I'm printing Codex's first draft, then I'll call Gemini with only the code + GEMINI.md rules."
+            )
             section_rule("Initial output (Codex)")
             console.print()
             console.print(code)
@@ -708,13 +752,16 @@ No markdown, no other text."""
 
             # ---------- review ----------
 
-            console.print(Text("Step 2 - independent review", style=TITLE))
-            step_done("Gemini is reading the draft as code quality, risks, and gaps.")
+            trace_doing(
+                "I'm calling Gemini now to critique the draft (risks, style, missing pieces)—independent of Codex's voice."
+            )
             review = run_gemini(
                 f"{mem_block}{GEMINI_RULES}\n\nCODE:\n{code}",
                 "Gemini: writing structured review...",
             )
-            step_done("Gemini returned notes; I'm packaging them for Codex as the sole improvement signal.")
+            trace_done(
+                "Review is back; I'm going to feed Gemini's text to Codex as the sole improvement signal."
+            )
             console.print()
 
             section_rule("Review (Gemini)")
@@ -724,14 +771,9 @@ No markdown, no other text."""
 
             # ---------- improve ----------
 
-            console.print(Text("Step 3 - close the loop with Codex", style=TITLE))
-            handoff_line(
-                "Gemini",
-                "Codex",
-                "Delivering Gemini's critique back to Codex with the original snippet so it can revise, not rewrite from scratch unless the review demands it.",
+            trace_doing(
+                "I'm calling Codex again with the original code, Gemini's review, and the same generation rules so it can revise in place."
             )
-            console.print()
-            step_done("Codex is merging rules, prior code, and Gemini feedback into a revised artifact.")
             improved_raw = run_codex(
                 f"""
 {mem_block}{CODEX_RULES}
@@ -750,7 +792,9 @@ Return ONLY code.
                 "Codex: applying Gemini feedback...",
             )
             improved = extract_code(improved_raw)
-            step_done("Revision landed; next I'll diff against the first Codex version.")
+            trace_done(
+                "Revision is in; I'm computing a unified diff between the first and second Codex outputs next."
+            )
             console.print()
 
             section_rule("Revised output (Codex)")
@@ -760,9 +804,11 @@ Return ONLY code.
 
             # ---------- diff ----------
 
-            console.print(Text("Step 4 - surface the delta", style=TITLE))
-            step_done("Computing a unified diff so you can see exactly what moved between Codex passes.")
+            trace_doing(
+                "I'm running a local unified diff (v1 vs v2) so you can see exactly what changed line by line."
+            )
             diff_output = get_diff(code, improved)
+            trace_done("Diff is computed; I'm moving on to a plain-language summary of the improvements.")
             console.print()
 
             section_rule("Diff (system)")
@@ -772,14 +818,9 @@ Return ONLY code.
 
             # ---------- summary ----------
 
-            console.print(Text("Step 5 - narrative recap", style=TITLE))
-            handoff_line(
-                "Codex (v1 and v2)",
-                "Gemini",
-                "Sharing both versions so Gemini can describe improvements in plain language: not another code edit, just a concise changelog of intent.",
+            trace_doing(
+                "I'm sending both versions to Gemini and asking for a short recap of what got better—not another code edit."
             )
-            console.print()
-            step_done("Gemini is comparing OLD vs NEW and summarizing outcomes.")
             summary = run_gemini(
                 f"""
 {mem_block}{GEMINI_RULES}
@@ -794,7 +835,9 @@ NEW:
 """,
                 "Gemini: summarizing improvements...",
             )
-            step_done("Summary ready. That completes the Codex \u2194 Gemini round trip for this task.")
+            trace_done(
+                "Summary is done; I'm persisting durable session notes via Codex next, then this turn is complete."
+            )
             console.print()
 
             section_rule("Summary (Gemini)")
