@@ -1,6 +1,11 @@
 {
   "stack": [],
   "constraints": [],
-  "decisions": [],
-  "notes": ""
+  "decisions": [
+    {
+      "date": "2026-03-22",
+      "text": "so what can you do for me?"
+    }
+  ],
+  "notes": "User's name is surya"
 }

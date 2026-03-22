@@ -99,14 +99,6 @@ def main():
             + "\n\n---\n\n"
         )
 
-    def memory_stats(mem):
-        n_stack = len([x for x in (mem.get("stack") or []) if str(x).strip()])
-        n_cons = len([x for x in (mem.get("constraints") or []) if str(x).strip()])
-        n_dec = len(mem.get("decisions") or [])
-        notes = (mem.get("notes") or "").strip()
-        n_notes = 1 if notes else 0
-        return n_stack + n_cons + n_dec + n_notes
-
     def reasoning_block(title: str, paragraphs: List[str]) -> None:
         body = Text()
         for i, para in enumerate(paragraphs):
@@ -172,7 +164,12 @@ def main():
         match = re.search(r"```(?:\w+)?\n([\s\S]*?)```", text)
         return match.group(1).strip() if match else text
 
-    ROUTER_PROMPT = """You route input for DevAI, a CLI that runs a Codex+Gemini coding workflow.
+    ROUTER_TEMPLATE = """You route input for DevAI, a CLI that runs a Codex+Gemini coding workflow.
+
+Saved project context (memory.json)—use it when mode is CHAT so answers stay consistent (name, stack, notes, etc.):
+---
+__MEMORY__
+---
 
 BUILD = the user wants software development work: write or change code, scripts, apps, sites, APIs, CLIs, configs for projects, debugging/refactoring code, generating project files, implementation steps, or anything where producing/editing code or project artifacts is the main goal.
 
@@ -180,15 +177,31 @@ CHAT = not that: greetings, thanks, small talk, general knowledge, non-coding qu
 
 If ambiguous, choose BUILD.
 
-Reply with exactly this shape (no markdown fences, no preamble):
+Reply with exactly this shape (no markdown fences, no preamble before line 1):
 Line 1: only the word BUILD or CHAT
-If CHAT: starting line 2, a short helpful plain-text reply to the user (no code blocks unless they explicitly asked for code).
+If CHAT: starting line 2, a short helpful plain-text reply (no fenced code unless they explicitly asked for code).
+
+If CHAT: when the user states identity, preferences, or asks you to remember something for later turns, you MUST add one line at the very end (after your reply) using exactly:
+PERSIST note: <concise fact>
+(or PERSIST stack: / PERSIST constraints: / PERSIST decision: when that fits better)
+If there is truly nothing durable to store, omit PERSIST lines entirely.
 
 User input:
 ---
 __TASK__
 ---
 """
+
+    _PERSIST_LINE = re.compile(
+        r"^PERSIST\s+(note|stack|constraints|decision)\s*:\s*(.+?)\s*$",
+        re.I,
+    )
+
+    def build_router_prompt(task: str, mem_block: str) -> str:
+        mem_ctx = mem_block.strip() if mem_block.strip() else "(none yet)"
+        return (
+            ROUTER_TEMPLATE.replace("__MEMORY__", mem_ctx).replace("__TASK__", task)
+        )
 
     def parse_build_or_chat(raw: str):
         """Return ('workflow', None) or ('chat', reply_text)."""
@@ -215,6 +228,113 @@ __TASK__
                 return "chat", rest
         return "workflow", None
 
+    def extract_persist_directives(text: str):
+        """Strip PERSIST lines from model text; return (visible_reply, [(kind, value), ...])."""
+        out_lines = []
+        persists = []
+        for line in text.splitlines():
+            m = _PERSIST_LINE.match(line.strip())
+            if m:
+                kind, val = m.group(1).lower(), m.group(2).strip()
+                if val:
+                    persists.append((kind, val))
+            else:
+                out_lines.append(line)
+        visible = "\n".join(out_lines).strip()
+        return visible, persists
+
+    def apply_persist_directives(mem, persists) -> bool:
+        """Apply auto-persist lines; save if any. Returns whether memory changed."""
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        changed = False
+        for kind, val in persists:
+            changed = True
+            if kind == "note":
+                prev = (mem.get("notes") or "").strip()
+                mem["notes"] = (prev + "\n" + val).strip() if prev else val
+            elif kind == "stack":
+                mem.setdefault("stack", []).append(val)
+            elif kind == "constraints":
+                mem.setdefault("constraints", []).append(val)
+            elif kind == "decision":
+                mem.setdefault("decisions", []).append({"date": now, "text": val})
+        if changed:
+            save_memory(mem)
+        return changed
+
+    MEMORY_EXTRACT_SESSION = """You update long-lived session memory for DevAI after a coding run finished.
+
+User task:
+---
+__TASK__
+---
+
+What happened (summary):
+---
+__SUMMARY__
+---
+
+Output ONLY 0-4 lines. Each line is exactly one of:
+PERSIST note: <fact>
+PERSIST stack: <tool or stack>
+PERSIST constraints: <rule>
+PERSIST decision: <decision>
+or a single line: NONE
+
+Persist only durable facts that should influence future sessions. If nothing is worth saving, output exactly NONE.
+No markdown, no other text."""
+
+    MEMORY_EXTRACT_PROJECT = """You update long-lived session memory for DevAI after multi-file output was written.
+
+User task:
+---
+__TASK__
+---
+
+Files created:
+__FILES__
+
+Output ONLY 0-4 lines. Each line is exactly one of:
+PERSIST note: <fact>
+PERSIST stack: <tool or stack>
+PERSIST constraints: <rule>
+PERSIST decision: <decision>
+or a single line: NONE
+
+Persist only durable facts. If nothing is worth saving, output exactly NONE.
+No markdown, no other text."""
+
+    def auto_memory_from_text(mem, raw: str) -> None:
+        """Parse PERSIST lines from model output; ignore NONE-only responses."""
+        stripped = raw.strip()
+        if not stripped or re.match(r"^NONE\s*$", stripped, re.I):
+            return
+        _, persists = extract_persist_directives(raw)
+        if persists:
+            apply_persist_directives(mem, persists)
+
+    def auto_memory_after_code_session(mem, task: str, summary: str) -> None:
+        t = task.replace("__", "")[:6000]
+        s = summary.replace("__", "")[:12000]
+        prompt = (
+            MEMORY_EXTRACT_SESSION.replace("__TASK__", t).replace("__SUMMARY__", s)
+        )
+        out = run_codex(
+            prompt,
+            "Codex: updating persistent context...",
+        )
+        auto_memory_from_text(mem, out)
+
+    def auto_memory_after_project_session(mem, task: str, file_names: str) -> None:
+        t = task.replace("__", "")[:6000]
+        f = file_names.replace("__", "")[:4000]
+        prompt = MEMORY_EXTRACT_PROJECT.replace("__TASK__", t).replace("__FILES__", f)
+        out = run_codex(
+            prompt,
+            "Codex: updating persistent context...",
+        )
+        auto_memory_from_text(mem, out)
+
     def extract_files(text):
         pattern = r"FILE:\s*(.*?)\n([\s\S]*?)(?=FILE:|$)"
         matches = re.findall(pattern, text)
@@ -237,37 +357,6 @@ __TASK__
         )
         return "\n".join(diff)
 
-    def append_memory_interactive(mem):
-        hint = (
-            "Save to memory.json (empty = skip). "
-            "Prefixes: stack: | constraints: | note: | else -> decision"
-        )
-        console.print(Text(hint, style=MUTED))
-        line = console.input(Text("\u203a ", style=TITLE)).strip()
-        if not line:
-            return
-        lower = line.lower()
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-        if lower.startswith("stack:"):
-            item = line.split(":", 1)[1].strip()
-            if item:
-                mem.setdefault("stack", []).append(item)
-        elif lower.startswith("constraints:"):
-            item = line.split(":", 1)[1].strip()
-            if item:
-                mem.setdefault("constraints", []).append(item)
-        elif lower.startswith("note:"):
-            item = line.split(":", 1)[1].strip()
-            if item:
-                prev = (mem.get("notes") or "").strip()
-                mem["notes"] = (prev + "\n" + item).strip() if prev else item
-        else:
-            mem.setdefault("decisions", []).append({"date": now, "text": line})
-
-        save_memory(mem)
-        console.print(Text("Memory updated.", style=MUTED))
-
     # ---------- load rules (once per process) ----------
 
     with open(os.path.join(AI_PATH, "CODEX.md"), encoding="utf-8") as f:
@@ -289,9 +378,6 @@ __TASK__
                 header.append("devai", style=TITLE)
                 header.append("  ", style="")
                 header.append("dual-agent loop", style=SUBTITLE)
-                n = memory_stats(memory)
-                header.append("  \u00b7  ", style="")
-                header.append(f"memory: {n} item(s)", style=MUTED)
                 console.print(header)
                 console.print(Rule(style=BORDER))
                 console.print()
@@ -299,20 +385,13 @@ __TASK__
             else:
                 console.print()
                 console.print(Rule(style=BORDER))
-                sub = Text()
-                sub.append("Next task", style=TITLE)
-                sub.append("  \u00b7  ", style="")
-                sub.append(
-                    f"memory: {memory_stats(memory)} item(s)",
-                    style=MUTED,
-                )
-                console.print(sub)
+                console.print(Text("Next", style=TITLE))
                 console.print(Rule(style=BORDER))
                 console.print()
 
             # ---------- input ----------
 
-            prompt_label = Text("What do you want to build? ", style=TITLE)
+            prompt_label = Text("What would you like to do? ", style=TITLE)
             task = console.input(prompt_label).strip()
 
             if not task:
@@ -325,16 +404,19 @@ __TASK__
                 continue
 
             router_raw = run_codex(
-                ROUTER_PROMPT.replace("__TASK__", task),
-                "Checking whether this is a build task...",
+                build_router_prompt(task, mem_block),
+                "Codex: routing (build vs conversation)...",
             )
             mode, chat_reply = parse_build_or_chat(router_raw)
 
             if mode == "chat":
+                chat_reply, auto_persists = extract_persist_directives(chat_reply)
+                apply_persist_directives(memory, auto_persists)
+
                 console.print()
-                section_rule("Reply (no coding workflow)")
+                section_rule("Reply")
                 console.print()
-                console.print(chat_reply)
+                console.print(chat_reply or "(empty reply)")
                 console.print()
                 continue
 
@@ -380,7 +462,9 @@ __TASK__
                 )
                 console.print()
                 console.print()
-                append_memory_interactive(memory)
+                auto_memory_after_project_session(
+                    memory, task, ", ".join(sorted(files.keys()))
+                )
                 continue
 
             code = extract_code(raw)
@@ -495,7 +579,7 @@ NEW:
             console.print(summary)
             console.print()
 
-            append_memory_interactive(memory)
+            auto_memory_after_code_session(memory, task, summary)
 
         except KeyboardInterrupt:
             console.print()
