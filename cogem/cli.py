@@ -156,6 +156,17 @@ def main():
     from rich.rule import Rule
     from rich.text import Text
 
+    try:
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.completion import Completer
+        from prompt_toolkit.history import InMemoryHistory
+        from prompt_toolkit.shortcuts import CompleteStyle
+    except ImportError:
+        PromptSession = None
+        Completer = None  # type: ignore
+        CompleteStyle = None  # type: ignore
+        InMemoryHistory = None  # type: ignore
+
     _ap = argparse.ArgumentParser(
         prog="cogem",
         description="Cogem: Codex + Gemini dual-agent loop (generate, review, improve).",
@@ -900,6 +911,166 @@ __TASK__
         rest = (m.group(2) or "").strip()
         return rest, name
 
+    _SLASH_TASK_COMMANDS = (
+        "/build",
+        "/plan",
+        "/debug",
+        "/agent",
+        "/ask",
+        "/codex/model",
+        "/gemini/model",
+    )
+    _MAX_AT_COMPLETIONS = 500
+
+    def _slash_task_prefix(text_before_cursor: str) -> Optional[str]:
+        """Return current first-word slash token (e.g. '/build'), '' for empty line, or None."""
+        if "\n" in text_before_cursor:
+            return None
+        t = text_before_cursor
+        if not t.strip():
+            return ""
+        if t.endswith(" "):
+            return None
+        if len(t.split()) > 1:
+            return None
+        w = t.strip()
+        if not w.startswith("/"):
+            return None
+        return w
+
+    def _at_mention_segment(text_before_cursor: str) -> Optional[Tuple[int, str, bool]]:
+        """Return (index after @, partial path, quoted) for completion, or None."""
+        if "\n" in text_before_cursor:
+            return None
+        i = text_before_cursor.rfind("@")
+        if i < 0:
+            return None
+        seg = text_before_cursor[i + 1 :]
+        if seg.startswith('"'):
+            m = re.match(r'^"([^"]*)$', seg)
+            if m:
+                return (i + 1, m.group(1), True)
+            return None
+        if " " in seg:
+            return None
+        return (i + 1, seg, False)
+
+    def _complete_path_from_root(root: str, partial: str) -> List[str]:
+        """Relative paths under root using forward slashes; partial is a path fragment."""
+        try:
+            root = os.path.realpath(root)
+        except OSError:
+            return []
+        if not os.path.isdir(root):
+            return []
+        partial = partial.replace("\\", "/").rstrip("/")
+        if not partial:
+            out: List[str] = []
+            try:
+                entries = sorted(os.listdir(root))
+            except OSError:
+                return []
+            for e in entries:
+                if e.startswith("."):
+                    continue
+                full = os.path.join(root, e)
+                rel = e
+                if os.path.isdir(full):
+                    rel += "/"
+                out.append(rel)
+            return out
+        parent_rel = os.path.dirname(partial).replace("\\", "/")
+        if parent_rel == ".":
+            parent_rel = ""
+        prefix = os.path.basename(partial)
+        d = os.path.join(root, parent_rel) if parent_rel else root
+        if not os.path.isdir(d):
+            return []
+        out = []
+        try:
+            entries = sorted(os.listdir(d))
+        except OSError:
+            return []
+        for e in entries:
+            if e.startswith("."):
+                continue
+            if prefix and not e.startswith(prefix):
+                continue
+            full = os.path.join(d, e)
+            if parent_rel:
+                rel = f"{parent_rel}/{e}".replace("\\", "/")
+            else:
+                rel = e
+            if os.path.isdir(full):
+                rel += "/"
+            out.append(rel)
+        return out
+
+    def _complete_rel_paths_under_roots(partial: str) -> List[str]:
+        merged: set[str] = set()
+        for r in _mention_roots_list():
+            for rel in _complete_path_from_root(r, partial):
+                merged.add(rel)
+        return sorted(merged)
+
+    task_prompt_session = None
+    if PromptSession is not None and Completer is not None and sys.stdin.isatty():
+
+        class CogemCompleter(Completer):
+            def get_completions(self, document, complete_event):
+                from prompt_toolkit.completion import Completion
+
+                before = document.text_before_cursor
+                info = _at_mention_segment(before)
+                if info is not None:
+                    start_i, partial, quoted = info
+                    seg_replace = before[start_i:]
+                    rels = _complete_rel_paths_under_roots(partial)
+                    for rel in rels[:_MAX_AT_COMPLETIONS]:
+                        if quoted:
+                            text = '"' + rel + '"'
+                        else:
+                            text = rel
+                        meta = "dir" if rel.endswith("/") else "file"
+                        yield Completion(
+                            text,
+                            start_position=-len(seg_replace),
+                            display_meta=meta,
+                        )
+                    return
+
+                sp = _slash_task_prefix(before)
+                if sp is None:
+                    return
+                if sp == "" and not before.strip():
+                    for cmd in _SLASH_TASK_COMMANDS:
+                        yield Completion(cmd, start_position=0)
+                    return
+                slash_start = before.find("/")
+                if slash_start < 0:
+                    return
+                replace_len = len(before) - slash_start
+                for cmd in _SLASH_TASK_COMMANDS:
+                    if sp and not cmd.startswith(sp):
+                        continue
+                    yield Completion(cmd, start_position=-replace_len)
+
+        task_prompt_session = PromptSession(
+            completer=CogemCompleter(),
+            history=InMemoryHistory(),
+            complete_while_typing=True,
+            complete_style=CompleteStyle.COLUMN,
+        )
+
+    def read_task_line() -> str:
+        if task_prompt_session is not None:
+            try:
+                return task_prompt_session.prompt("What would you like to do? ").strip()
+            except (EOFError, KeyboardInterrupt):
+                raise
+        prompt_label = Text("What would you like to do? ", style=TITLE)
+        return console.input(prompt_label).strip()
+
     def parse_build_or_chat(raw: str):
         """Return ('workflow', None) or ('chat', reply_text)."""
         text = raw.lstrip("\ufeff").strip()
@@ -1292,7 +1463,7 @@ No markdown, no other text."""
                     Text(
                         "Session: /build /plan /debug /agent /ask   "
                         "/codex/model <M|reset>   /gemini/model <M|reset>   "
-                        "@path @folder",
+                        "@path @folder   (Tab completes / and @)",
                         style=MUTED,
                     )
                 )
@@ -1306,10 +1477,9 @@ No markdown, no other text."""
                 console.print(Rule(style=BORDER))
                 console.print()
 
-            # ---------- input ----------
+            # ---------- input (prompt_toolkit: / and @ dropdown when TTY) ----------
 
-            prompt_label = Text("What would you like to do? ", style=TITLE)
-            task = console.input(prompt_label).strip()
+            task = read_task_line()
 
             if not task:
                 console.print(

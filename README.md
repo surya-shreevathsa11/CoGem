@@ -327,6 +327,8 @@ If a flag is omitted, you can still set defaults with environment variables belo
 
 ### In-session commands
 
+On an interactive terminal, the main task prompt uses **prompt-style completion**: type `/` or `@` and use **Tab** (or keep typing) to open a **menu of suggestions** for session directives and paths under the project / cwd (same roots as `@` mentions).
+
 While Cogem is running, you can change models without restarting:
 
 | Command | Meaning |
