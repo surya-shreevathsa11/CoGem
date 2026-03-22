@@ -308,12 +308,46 @@ pipx install -e . --force
 
 ---
 
+## CLI options (optional)
+
+Pass model IDs to the underlying CLIs (same as `codex exec -m` and `gemini -m`). Valid names depend on your Codex / Gemini CLI version and account.
+
+```bash
+cogem --codex-model <MODEL> --gemini-model <MODEL>
+```
+
+Examples:
+
+```bash
+cogem --gemini-model gemini-2.5-flash
+cogem --codex-model o3
+```
+
+If a flag is omitted, you can still set defaults with environment variables below.
+
+### In-session commands
+
+While Cogem is running, you can change models without restarting:
+
+| Command | Meaning |
+|---------|---------|
+| `/codex/model` | Show current Codex model and startup default |
+| `/codex/model <MODEL>` | Use `<MODEL>` for all Codex calls this session |
+| `/codex/model reset` | Restore the model from `--codex-model` / `COGEM_CODEX_MODEL` |
+| `/gemini/model` | Show current Gemini model and startup default |
+| `/gemini/model <MODEL>` | Use `<MODEL>` for all Gemini calls this session |
+| `/gemini/model reset` | Restore the model from `--gemini-model` / `COGEM_GEMINI_MODEL` |
+
+---
+
 ## Environment variables (optional)
 
 | Variable | Purpose |
 |----------|---------|
 | `COGEM_AUTO_PERMISSIONS` | `yes` / `no` — skip the interactive prompt for Codex `--full-auto` and Gemini `--yolo` |
 | `COGEM_CODEX_WORKDIR` | Absolute path passed to Codex `-C` (workspace root) |
+| `COGEM_CODEX_MODEL` | Default Codex model when `--codex-model` is not passed |
+| `COGEM_GEMINI_MODEL` | Default Gemini model when `--gemini-model` is not passed |
 | `COGEM_SUBPROCESS_TIMEOUT_SEC` | Integer seconds; abort a stuck `codex` / `gemini` subprocess after this time |
 
 ---

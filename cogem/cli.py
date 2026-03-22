@@ -136,6 +136,7 @@ def boot_sequence() -> bool:
 
 
 def main():
+    import argparse
     import json
     import subprocess
     import re
@@ -154,6 +155,34 @@ def main():
     from rich.console import Console
     from rich.rule import Rule
     from rich.text import Text
+
+    _ap = argparse.ArgumentParser(
+        prog="cogem",
+        description="Cogem: Codex + Gemini dual-agent loop (generate, review, improve).",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  cogem\n"
+            "  cogem --codex-model o3 --gemini-model gemini-2.5-flash\n"
+            "\n"
+            "You can also set COGEM_CODEX_MODEL / COGEM_GEMINI_MODEL when flags are omitted."
+        ),
+    )
+    _ap.add_argument(
+        "--codex-model",
+        metavar="MODEL",
+        default=None,
+        help="Forwarded to `codex exec -m MODEL` for every Codex call.",
+    )
+    _ap.add_argument(
+        "--gemini-model",
+        metavar="MODEL",
+        default=None,
+        help="Forwarded to `gemini -m MODEL` for every Gemini call.",
+    )
+    _args = _ap.parse_args()
+    _codex_model = (_args.codex_model or os.environ.get("COGEM_CODEX_MODEL") or "").strip() or None
+    _gemini_model = (_args.gemini_model or os.environ.get("COGEM_GEMINI_MODEL") or "").strip() or None
 
     if not boot_sequence():
         raise SystemExit(1)
@@ -177,6 +206,8 @@ def main():
     session_tokens = {"codex": 0, "gemini": 0}
     # None = not asked yet; True/False = user chose whether to pass Codex --full-auto and Gemini --yolo.
     auto_permissions: dict = {"granted": None}
+    # Effective models for this process; start from CLI/env, change with /codex/model and /gemini/model.
+    models: dict = {"codex": _codex_model, "gemini": _gemini_model}
 
     ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     AI_PATH = os.path.join(ROOT, ".ai")
@@ -523,6 +554,9 @@ def main():
         wd = os.environ.get("COGEM_CODEX_WORKDIR", "").strip()
         if wd:
             argv.extend(["-C", os.path.abspath(wd)])
+        cm = models.get("codex")
+        if cm:
+            argv.extend(["-m", cm])
         argv.append(prompt)
         return argv
 
@@ -530,6 +564,9 @@ def main():
         argv = ["gemini"]
         if auto_permissions.get("granted"):
             argv.append("--yolo")
+        gm = models.get("gemini")
+        if gm:
+            argv.extend(["-m", gm])
         argv.extend(["-p", prompt])
         return argv
 
@@ -991,6 +1028,22 @@ No markdown, no other text."""
                 console.print(header)
                 console.print(Rule(style=BORDER))
                 console.print()
+                if models.get("codex"):
+                    console.print(
+                        Text(f"Codex model: {models['codex']}", style=MUTED)
+                    )
+                if models.get("gemini"):
+                    console.print(
+                        Text(f"Gemini model: {models['gemini']}", style=MUTED)
+                    )
+                console.print(
+                    Text(
+                        "Session: /codex/model <MODEL|reset>   /gemini/model <MODEL|reset>",
+                        style=MUTED,
+                    )
+                )
+                if models.get("codex") or models.get("gemini"):
+                    console.print()
                 first_turn = False
             else:
                 console.print()
@@ -1011,6 +1064,76 @@ No markdown, no other text."""
                         style=MUTED,
                     )
                 )
+                continue
+
+            if task.startswith("/codex/model"):
+                rest = task[len("/codex/model"):].strip()
+                if not rest:
+                    console.print(
+                        Text(
+                            f"Codex model (this session): {models.get('codex') or '(none — CLI default)'}",
+                            style=MUTED,
+                        )
+                    )
+                    console.print(
+                        Text(
+                            f"Startup default: {_codex_model or '(none)'}",
+                            style=MUTED,
+                        )
+                    )
+                    console.print(
+                        Text(
+                            "Usage: /codex/model <MODEL>   or   /codex/model reset",
+                            style=MUTED,
+                        )
+                    )
+                    continue
+                if rest.lower() == "reset":
+                    models["codex"] = _codex_model
+                    console.print(
+                        Text(
+                            f"Codex model reset to: {models.get('codex') or '(none)'}",
+                            style=TITLE,
+                        )
+                    )
+                    continue
+                models["codex"] = rest
+                console.print(Text(f"Codex model set to: {rest}", style=TITLE))
+                continue
+
+            if task.startswith("/gemini/model"):
+                rest = task[len("/gemini/model"):].strip()
+                if not rest:
+                    console.print(
+                        Text(
+                            f"Gemini model (this session): {models.get('gemini') or '(none — CLI default)'}",
+                            style=MUTED,
+                        )
+                    )
+                    console.print(
+                        Text(
+                            f"Startup default: {_gemini_model or '(none)'}",
+                            style=MUTED,
+                        )
+                    )
+                    console.print(
+                        Text(
+                            "Usage: /gemini/model <MODEL>   or   /gemini/model reset",
+                            style=MUTED,
+                        )
+                    )
+                    continue
+                if rest.lower() == "reset":
+                    models["gemini"] = _gemini_model
+                    console.print(
+                        Text(
+                            f"Gemini model reset to: {models.get('gemini') or '(none)'}",
+                            style=TITLE,
+                        )
+                    )
+                    continue
+                models["gemini"] = rest
+                console.print(Text(f"Gemini model set to: {rest}", style=TITLE))
                 continue
 
             session_tokens["codex"] = 0
