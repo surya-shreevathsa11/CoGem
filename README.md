@@ -310,20 +310,30 @@ pipx install -e . --force
 
 ## CLI options (optional)
 
-Pass model IDs to the underlying CLIs (same as `codex exec -m` and `gemini -m`). Valid names depend on your Codex / Gemini CLI version and account.
+### LLM models (Codex vs Gemini)
+
+**Yes — you choose LLMs separately.** Cogem wires two different CLIs, each with its own `-m` model flag:
+
+| Role in Cogem | CLI flag | Used for |
+|----------------|----------|----------|
+| **Codex LLM** | `codex exec -m MODEL_ID` | Drafting code, Codex “improve” pass |
+| **Gemini LLM** | `gemini -m MODEL_ID` | Review step, final summary |
+
+- **If you do not set a model** for a backend, cogem **does not pass `-m`** for that CLI, so **that tool’s default model** is used (same as running `codex` / `gemini` without `-m`).
+- **Valid `MODEL_ID` strings** depend on your installed CLI version and account (OpenAI, Google, Anthropic, etc.). Examples people use include `o3`, `gemini-2.5-pro`, `gemini-2.5-flash`; exact names are defined by each CLI — use `codex exec --help` and `gemini --help` on your machine.
 
 ```bash
-cogem --codex-model <MODEL> --gemini-model <MODEL>
+cogem --codex-model o3 --gemini-model gemini-2.5-pro
 ```
 
-Examples:
+Only one backend:
 
 ```bash
 cogem --gemini-model gemini-2.5-flash
 cogem --codex-model o3
 ```
 
-If a flag is omitted, you can still set defaults with environment variables below.
+If a flag is omitted, you can still set defaults with the environment variables in the table below.
 
 ### In-session commands
 
@@ -333,12 +343,12 @@ While Cogem is running, you can change models without restarting:
 
 | Command | Meaning |
 |---------|---------|
-| `/codex/model` | Show current Codex model and startup default |
-| `/codex/model <MODEL>` | Use `<MODEL>` for all Codex calls this session |
-| `/codex/model reset` | Restore the model from `--codex-model` / `COGEM_CODEX_MODEL` |
-| `/gemini/model` | Show current Gemini model and startup default |
-| `/gemini/model <MODEL>` | Use `<MODEL>` for all Gemini calls this session |
-| `/gemini/model reset` | Restore the model from `--gemini-model` / `COGEM_GEMINI_MODEL` |
+| `/codex/model` | Show Codex LLM (`codex exec -m`), this session, and startup default |
+| `/codex/model <MODEL_ID>` | Use that ID for **all Codex** calls this session |
+| `/codex/model reset` | Restore Codex model from `--codex-model` / `COGEM_CODEX_MODEL` |
+| `/gemini/model` | Show Gemini LLM (`gemini -m`), this session, and startup default |
+| `/gemini/model <MODEL_ID>` | Use that ID for **all Gemini** calls this session |
+| `/gemini/model reset` | Restore Gemini model from `--gemini-model` / `COGEM_GEMINI_MODEL` |
 
 ### Session directives (task mode)
 
@@ -374,8 +384,8 @@ Optional limits: `COGEM_AT_MAX_FILE_BYTES` (default `400000`), `COGEM_AT_MAX_TOT
 |----------|---------|
 | `COGEM_AUTO_PERMISSIONS` | `yes` / `no` — skip the interactive prompt for Codex `--full-auto` and Gemini `--yolo` |
 | `COGEM_CODEX_WORKDIR` | Absolute path passed to Codex `-C` (workspace root) |
-| `COGEM_CODEX_MODEL` | Default Codex model when `--codex-model` is not passed |
-| `COGEM_GEMINI_MODEL` | Default Gemini model when `--gemini-model` is not passed |
+| `COGEM_CODEX_MODEL` | Default Codex LLM ID when `--codex-model` is not passed |
+| `COGEM_GEMINI_MODEL` | Default Gemini LLM ID when `--gemini-model` is not passed |
 | `COGEM_SUBPROCESS_TIMEOUT_SEC` | Integer seconds; abort a stuck `codex` / `gemini` subprocess after this time |
 | `COGEM_AT_MAX_FILE_BYTES` | Max bytes read per `@` file (default `400000`) |
 | `COGEM_AT_MAX_TOTAL_CHARS` | Max total characters for all `@` attachments in one turn (default `120000`) |

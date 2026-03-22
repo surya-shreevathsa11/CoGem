@@ -172,24 +172,34 @@ def main():
         description="Cogem: Codex + Gemini dual-agent loop (generate, review, improve).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
+            "LLM models are chosen separately for Codex (draft/improve) and Gemini (review/summary).\n"
+            "Omit both flags to let each CLI use its default model (no -m passed).\n"
+            "\n"
             "Examples:\n"
             "  cogem\n"
-            "  cogem --codex-model o3 --gemini-model gemini-2.5-flash\n"
+            "  cogem --codex-model o3 --gemini-model gemini-2.5-pro\n"
             "\n"
-            "You can also set COGEM_CODEX_MODEL / COGEM_GEMINI_MODEL when flags are omitted."
+            "Env (when flags omitted): COGEM_CODEX_MODEL, COGEM_GEMINI_MODEL\n"
+            "Valid IDs depend on your codex/gemini CLI and account; see `codex exec --help` and `gemini --help`."
         ),
     )
     _ap.add_argument(
         "--codex-model",
-        metavar="MODEL",
+        metavar="MODEL_ID",
         default=None,
-        help="Forwarded to `codex exec -m MODEL` for every Codex call.",
+        help=(
+            "LLM for Codex (generate + improve steps). Passed as `codex exec -m MODEL_ID`. "
+            "Omit to use the Codex CLI default."
+        ),
     )
     _ap.add_argument(
         "--gemini-model",
-        metavar="MODEL",
+        metavar="MODEL_ID",
         default=None,
-        help="Forwarded to `gemini -m MODEL` for every Gemini call.",
+        help=(
+            "LLM for Gemini (review + summary steps). Passed as `gemini -m MODEL_ID`. "
+            "Omit to use the Gemini CLI default."
+        ),
     )
     _args = _ap.parse_args()
     _codex_model = (_args.codex_model or os.environ.get("COGEM_CODEX_MODEL") or "").strip() or None
@@ -217,8 +227,16 @@ def main():
     session_tokens = {"codex": 0, "gemini": 0}
     # None = not asked yet; True/False = user chose whether to pass Codex --full-auto and Gemini --yolo.
     auto_permissions: dict = {"granted": None}
-    # Effective models for this process; start from CLI/env, change with /codex/model and /gemini/model.
+    # Effective LLM IDs for this process (separate per backend); from CLI/env, change with /codex/model and /gemini/model.
     models: dict = {"codex": _codex_model, "gemini": _gemini_model}
+
+    def _llm_status_line(human: str, cli_hint: str, model_id: Optional[str]) -> str:
+        """human = short label; cli_hint = codex|gemini for messages."""
+        if model_id:
+            return f"{human}: {model_id}"
+        return (
+            f"{human}: default (cogem does not pass -m; `{cli_hint}` CLI default model)"
+        )
 
     ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     AI_PATH = os.path.join(ROOT, ".ai")
@@ -1451,24 +1469,36 @@ No markdown, no other text."""
                 console.print(header)
                 console.print(Rule(style=BORDER))
                 console.print()
-                if models.get("codex"):
-                    console.print(
-                        Text(f"Codex model: {models['codex']}", style=MUTED)
+                console.print(
+                    Text(
+                        _llm_status_line(
+                            "Codex LLM (draft + improve)",
+                            "codex",
+                            models.get("codex"),
+                        ),
+                        style=MUTED,
                     )
-                if models.get("gemini"):
-                    console.print(
-                        Text(f"Gemini model: {models['gemini']}", style=MUTED)
+                )
+                console.print(
+                    Text(
+                        _llm_status_line(
+                            "Gemini LLM (review + summary)",
+                            "gemini",
+                            models.get("gemini"),
+                        ),
+                        style=MUTED,
                     )
+                )
                 console.print(
                     Text(
                         "Session: /build /plan /debug /agent /ask   "
-                        "/codex/model <M|reset>   /gemini/model <M|reset>   "
+                        "/codex/model <MODEL_ID|reset>   "
+                        "/gemini/model <MODEL_ID|reset>   "
                         "@path @folder   (Tab completes / and @)",
                         style=MUTED,
                     )
                 )
-                if models.get("codex") or models.get("gemini"):
-                    console.print()
+                console.print()
                 first_turn = False
             else:
                 console.print()
@@ -1495,19 +1525,27 @@ No markdown, no other text."""
                 if not rest:
                     console.print(
                         Text(
-                            f"Codex model (this session): {models.get('codex') or '(none — CLI default)'}",
+                            "Codex LLM — used for drafting and improving code (`codex exec -m …`). "
+                            "Pick any model ID your Codex CLI supports (varies by account; e.g. o3, gpt-5, "
+                            "or provider-specific names). Gemini is configured separately with /gemini/model.",
                             style=MUTED,
                         )
                     )
                     console.print(
                         Text(
-                            f"Startup default: {_codex_model or '(none)'}",
+                            f"  This session: {models.get('codex') or 'default (no -m)'}",
                             style=MUTED,
                         )
                     )
                     console.print(
                         Text(
-                            "Usage: /codex/model <MODEL>   or   /codex/model reset",
+                            f"  From startup (--codex-model / COGEM_CODEX_MODEL): {_codex_model or '(none)'}",
+                            style=MUTED,
+                        )
+                    )
+                    console.print(
+                        Text(
+                            "  Usage: /codex/model <MODEL_ID>   or   /codex/model reset",
                             style=MUTED,
                         )
                     )
@@ -1516,13 +1554,13 @@ No markdown, no other text."""
                     models["codex"] = _codex_model
                     console.print(
                         Text(
-                            f"Codex model reset to: {models.get('codex') or '(none)'}",
+                            f"Codex LLM reset to: {models.get('codex') or 'default (no -m)'}",
                             style=TITLE,
                         )
                     )
                     continue
                 models["codex"] = rest
-                console.print(Text(f"Codex model set to: {rest}", style=TITLE))
+                console.print(Text(f"Codex LLM set to: {rest}", style=TITLE))
                 continue
 
             if task.startswith("/gemini/model"):
@@ -1530,19 +1568,27 @@ No markdown, no other text."""
                 if not rest:
                     console.print(
                         Text(
-                            f"Gemini model (this session): {models.get('gemini') or '(none — CLI default)'}",
+                            "Gemini LLM — used for review and final summary (`gemini -m …`). "
+                            "Pick any model ID your Gemini CLI supports (e.g. gemini-2.5-pro, "
+                            "gemini-2.5-flash). Codex is configured separately with /codex/model.",
                             style=MUTED,
                         )
                     )
                     console.print(
                         Text(
-                            f"Startup default: {_gemini_model or '(none)'}",
+                            f"  This session: {models.get('gemini') or 'default (no -m)'}",
                             style=MUTED,
                         )
                     )
                     console.print(
                         Text(
-                            "Usage: /gemini/model <MODEL>   or   /gemini/model reset",
+                            f"  From startup (--gemini-model / COGEM_GEMINI_MODEL): {_gemini_model or '(none)'}",
+                            style=MUTED,
+                        )
+                    )
+                    console.print(
+                        Text(
+                            "  Usage: /gemini/model <MODEL_ID>   or   /gemini/model reset",
                             style=MUTED,
                         )
                     )
@@ -1551,13 +1597,13 @@ No markdown, no other text."""
                     models["gemini"] = _gemini_model
                     console.print(
                         Text(
-                            f"Gemini model reset to: {models.get('gemini') or '(none)'}",
+                            f"Gemini LLM reset to: {models.get('gemini') or 'default (no -m)'}",
                             style=TITLE,
                         )
                     )
                     continue
                 models["gemini"] = rest
-                console.print(Text(f"Gemini model set to: {rest}", style=TITLE))
+                console.print(Text(f"Gemini LLM set to: {rest}", style=TITLE))
                 continue
 
             task, session_directive = parse_session_directive(task)
