@@ -6,7 +6,11 @@ def main():
     import re
     import difflib
     import os
+    import sys
     import time
+    import webbrowser
+    import shutil
+    from pathlib import Path
     from datetime import datetime, timezone
     from typing import List, Optional
 
@@ -349,6 +353,92 @@ No markdown, no other text."""
             line.append(f"{name} created", style=SUBTITLE)
             console.print(line)
 
+    def _pick_entry(paths: List[str], preferred_basenames: List[str]) -> str:
+        for pref in preferred_basenames:
+            pl = pref.lower()
+            for p in paths:
+                if os.path.basename(p).lower() == pl:
+                    return p
+        return sorted(paths)[0]
+
+    def run_written_artifacts(files: dict) -> None:
+        """Run by extension (internal only): .py, .js, then open .html — generic UI copy."""
+        paths = [p.strip() for p in files if p.strip()]
+        if not paths:
+            return
+
+        py_paths = [p for p in paths if p.lower().endswith(".py")]
+        js_paths = [
+            p
+            for p in paths
+            if p.lower().endswith(".js") or p.lower().endswith(".mjs")
+        ]
+        html_paths = [
+            p
+            for p in paths
+            if p.lower().endswith(".html") or p.lower().endswith(".htm")
+        ]
+
+        # Python before Node before browser (server / CLI before preview).
+        if py_paths:
+            target = _pick_entry(
+                py_paths,
+                ["main.py", "app.py", "run.py", "server.py", "script.py"],
+            )
+            abs_p = os.path.abspath(target)
+            work = os.path.dirname(abs_p) or os.getcwd()
+            with console.status(
+                Text("Running...", style=ITALIC_DIM),
+                spinner="dots12",
+                spinner_style=MUTED,
+            ):
+                proc = subprocess.run(
+                    [sys.executable, abs_p],
+                    cwd=work,
+                    capture_output=True,
+                    text=True,
+                )
+            if proc.stdout and proc.stdout.strip():
+                console.print(Text(proc.stdout.rstrip(), style=DIM))
+            if proc.returncode != 0 and proc.stderr and proc.stderr.strip():
+                console.print(Text(proc.stderr.rstrip(), style=MUTED))
+
+        if js_paths:
+            node = shutil.which("node")
+            if node:
+                target = _pick_entry(
+                    js_paths,
+                    ["index.js", "main.js", "server.js", "app.js"],
+                )
+                abs_p = os.path.abspath(target)
+                work = os.path.dirname(abs_p) or os.getcwd()
+                with console.status(
+                    Text("Running...", style=ITALIC_DIM),
+                    spinner="dots12",
+                    spinner_style=MUTED,
+                ):
+                    proc = subprocess.run(
+                        [node, abs_p],
+                        cwd=work,
+                        capture_output=True,
+                        text=True,
+                    )
+                if proc.stdout and proc.stdout.strip():
+                    console.print(Text(proc.stdout.rstrip(), style=DIM))
+                if proc.returncode != 0 and proc.stderr and proc.stderr.strip():
+                    console.print(Text(proc.stderr.rstrip(), style=MUTED))
+
+        if html_paths:
+            target = _pick_entry(html_paths, ["index.html", "main.html"])
+            abs_p = os.path.abspath(target)
+            uri = Path(abs_p).as_uri()
+            with console.status(
+                Text("Opening preview...", style=ITALIC_DIM),
+                spinner="dots12",
+                spinner_style=MUTED,
+            ):
+                webbrowser.open(uri)
+
     def get_diff(old, new):
         diff = difflib.unified_diff(
             old.splitlines(),
@@ -455,12 +545,7 @@ No markdown, no other text."""
                 console.print()
                 write_files(files)
                 console.print()
-                console.print(
-                    Text("Open with: ", style=TITLE),
-                    Text("explorer.exe index.html", style=MUTED),
-                    end="",
-                )
-                console.print()
+                run_written_artifacts(files)
                 console.print()
                 auto_memory_after_project_session(
                     memory, task, ", ".join(sorted(files.keys()))
