@@ -782,17 +782,23 @@ Saved project context (memory.json)—use it when mode is CHAT so answers stay c
 __MEMORY__
 ---
 
-BUILD = the user wants software development work: write or change code, scripts, apps, sites, APIs, CLIs, configs for projects, debugging/refactoring code, generating project files, implementation steps, or anything where producing/editing code or project artifacts is the main goal.
+BUILD = the user wants software development work: writing or changing code, scripts, apps, sites, APIs, CLIs, configs, tests, migrations, refactors, bugfixes, performance work, security fixes, adding/removing features, generating project files, or any task where code or repo artifacts are the main deliverable. This includes "fix", "debug", "implement", "add", "remove", "migrate", "review my code", "set up", "configure", "dockerize", "write a script", "create a landing page", "API route", "schema", "SQL", "CSS", "HTML", "component", "endpoint", "handler", "middleware", "test case", "CI", "build error", "stack trace", "refactor", "optimize", "wire up", "hook up", "integrate with".
 
-CHAT = not that: greetings, thanks, small talk, general knowledge, non-coding questions, unrelated topics, or meta questions about you without a build task.
+CHAT = conversational or informational only: greetings, thanks, small talk, definitions or explanations with NO request to change their project, general knowledge, career/life advice, "what is X" when they only want a conceptual answer and not code, comparing technologies without asking you to implement, meta questions about the assistant, or reading comprehension without producing project artifacts.
 
-Programming language / stack: If the user asks to build or change software using a specific language or framework (Python, JavaScript, Go, Rust, etc.), or to switch from one stack to another, that is always BUILD — not CHAT.
+Disambiguation (important):
+- "Explain how X works" with no repo/code task → usually CHAT. "Explain and then implement X" or "explain why my code fails" with code → BUILD.
+- "What should I learn next?" → CHAT. "Add auth to my app" → BUILD.
+- If they paste code and ask "is this correct?" or "find the bug" → BUILD (they need engineering help on code).
+- If ambiguous and they might need code changes, prefer BUILD.
+
+Programming language / stack: If they ask to use or switch language/framework/stack for implementation, that is BUILD.
 
 ROUTING FORMAT (CRITICAL — machine-parsed):
 - Line 1 must be ONLY the ASCII English word BUILD or CHAT (not translated, not localized). No other word on line 1.
 - After line 1 you may write the CHAT reply in ordinary prose if mode is CHAT.
 
-If ambiguous, choose BUILD.
+If still ambiguous, prefer BUILD when the message touches their codebase, errors, or deliverables; prefer CHAT for pure Q&A with no implementation.
 
 Reply with exactly this shape (no markdown fences, no preamble before line 1):
 Line 1: only the word BUILD or CHAT
@@ -809,16 +815,90 @@ __TASK__
 ---
 """
 
+    ROUTER_DIRECTIVE_HINTS = {
+        "plan": (
+            "[Directive /plan] The user wants planning or design guidance. "
+            "Prefer BUILD if they need steps, file lists, or implementation-oriented output; "
+            "CHAT only for purely conceptual Q&A with no project deliverable."
+        ),
+        "debug": (
+            "[Directive /debug] The user is debugging. "
+            "Prefer BUILD when logs, stack traces, repro, or code changes are involved; "
+            "CHAT only for abstract theory with no code work."
+        ),
+        "agent": (
+            "[Directive /agent] The user wants substantial autonomous implementation or multi-step work. "
+            "Almost always BUILD unless they only asked for a short non-code opinion."
+        ),
+    }
+
+    CODEX_MODE_HINTS = {
+        "plan": (
+            "\n## Session mode (/plan)\n"
+            "Prioritize a clear plan: steps, milestones, risks, files to touch, and alternatives. "
+            "Produce code or FILE: blocks only if the user asked for concrete edits; otherwise structured prose is fine.\n"
+        ),
+        "debug": (
+            "\n## Session mode (/debug)\n"
+            "Focus on root cause, minimal repro, targeted fixes, and verification. Avoid unrelated refactors.\n"
+        ),
+        "agent": (
+            "\n## Session mode (/agent)\n"
+            "Act as an autonomous coding agent: explore tradeoffs, coordinate multi-file changes, and complete the scoped work unless they narrowed the scope.\n"
+        ),
+    }
+
+    ASK_MODE_PROMPT = """You are Cogem's conversational assistant (no full code pipeline this turn).
+
+Saved context:
+---
+__MEMORY__
+---
+
+Answer the user in plain text. Do not use markdown code fences unless they explicitly asked for code.
+Be concise. If they only need a short definition or opinion, keep it short.
+
+If the user states identity, preferences, or asks you to remember something durable, add at the end exactly one line:
+PERSIST note: <concise fact>
+(or PERSIST stack: / PERSIST constraints: / PERSIST decision: when that fits better)
+If nothing to persist, omit PERSIST lines.
+
+User message:
+---
+__TASK__
+---
+"""
+
     _PERSIST_LINE = re.compile(
         r"^PERSIST\s+(note|stack|constraints|decision)\s*:\s*(.+?)\s*$",
         re.I,
     )
 
-    def build_router_prompt(task: str, mem_block: str) -> str:
+    def build_router_prompt(
+        task: str, mem_block: str, router_hint: str = ""
+    ) -> str:
         mem_ctx = mem_block.strip() if mem_block.strip() else "(none yet)"
-        return (
-            ROUTER_TEMPLATE.replace("__MEMORY__", mem_ctx).replace("__TASK__", task)
+        task_block = task
+        if router_hint.strip():
+            task_block = router_hint.strip() + "\n\n---\n\n" + task
+        return ROUTER_TEMPLATE.replace("__MEMORY__", mem_ctx).replace(
+            "__TASK__", task_block
         )
+
+    _SESSION_DIRECTIVE = re.compile(
+        r"^/(build|plan|debug|agent|ask)(?:\s+|$)(.*)$",
+        re.I | re.DOTALL,
+    )
+
+    def parse_session_directive(raw: str) -> Tuple[str, Optional[str]]:
+        """Strip one leading /build /plan /debug /agent /ask; return (rest, directive name or None)."""
+        s = raw.strip()
+        m = _SESSION_DIRECTIVE.match(s)
+        if not m:
+            return raw, None
+        name = m.group(1).lower()
+        rest = (m.group(2) or "").strip()
+        return rest, name
 
     def parse_build_or_chat(raw: str):
         """Return ('workflow', None) or ('chat', reply_text)."""
@@ -1210,8 +1290,9 @@ No markdown, no other text."""
                     )
                 console.print(
                     Text(
-                        "Session: /codex/model <MODEL|reset>   /gemini/model <MODEL|reset>   "
-                        "@path @folder (files under project/cwd)",
+                        "Session: /build /plan /debug /agent /ask   "
+                        "/codex/model <M|reset>   /gemini/model <M|reset>   "
+                        "@path @folder",
                         style=MUTED,
                     )
                 )
@@ -1309,6 +1390,7 @@ No markdown, no other text."""
                 console.print(Text(f"Gemini model set to: {rest}", style=TITLE))
                 continue
 
+            task, session_directive = parse_session_directive(task)
             task_clean, attach_block = expand_at_mentions(task)
             if attach_block:
                 n_refs = attach_block.count("### ")
@@ -1325,38 +1407,100 @@ No markdown, no other text."""
 
             ensure_auto_permissions()
 
-            trace_doing(
-                "I'm having Codex classify this turn: full build pipeline versus a direct conversational reply (using your text and saved context)."
-            )
-            router_raw, router_err, router_rc = run_codex(
-                build_router_prompt(task, mem_block),
-                "Codex: routing (build vs conversation)...",
-            )
-            if router_rc != 0:
-                trace_done(
-                    "Routing failed; not guessing BUILD/CHAT. Fix the error below, then retry."
+            mode_hint = CODEX_MODE_HINTS.get(session_directive or "", "")
+
+            # ---------- /ask: conversational only (skip router + build pipeline) ----------
+            if session_directive == "ask":
+                mem_ctx = mem_block.strip() if mem_block.strip() else "(none yet)"
+                ask_task_body = (attach_block or "") + (task_clean or "(no message)")
+                ask_raw, ask_err, ask_rc = run_codex(
+                    ASK_MODE_PROMPT.replace("__MEMORY__", mem_ctx).replace(
+                        "__TASK__", ask_task_body
+                    ),
+                    "Codex: /ask reply...",
                 )
+                if ask_rc != 0:
+                    console.print()
+                    _say(f"[cogem] ERROR: Codex exited with code {ask_rc} for /ask.")
+                    if (ask_err or "").strip():
+                        console.print(
+                            Text((ask_err or "").strip()[:800], style=LOG_ERR)
+                        )
+                    console.print()
+                    _token_turn_footer()
+                    continue
+                chat_reply = ask_raw.strip()
+                chat_reply, auto_persists = extract_persist_directives(chat_reply)
+                apply_persist_directives(memory, auto_persists)
+                trace_done("Direct /ask reply ready.")
+                live_reasoning_banner_chat(task or "/ask")
+                section_rule("Reply (/ask)")
                 console.print()
-                _say(f"[cogem] ERROR: Codex routing exited with code {router_rc}.")
-                if (router_err or "").strip():
-                    clip = (router_err or "").strip()[:1200]
-                    if len((router_err or "").strip()) > 1200:
-                        clip += "..."
-                    console.print(Text(clip, style=LOG_ERR))
-                console.print(
-                    Text(
-                        "Hint: cogem runs `codex exec --skip-git-repo-check`. "
-                        "If this persists, check `codex` on PATH and disk permissions.",
-                        style=MUTED,
-                    )
-                )
+                console.print(chat_reply or "(empty reply)")
                 console.print()
                 _token_turn_footer()
+                _say("[cogem] Turn finished. What would you like to do next?")
                 continue
-            mode, chat_reply = parse_build_or_chat(router_raw)
-            if mode == "chat" and looks_like_build_task(task):
+
+            if not (task or "").strip() and not attach_block:
+                if session_directive == "build":
+                    console.print(
+                        Text(
+                            "Add a description after /build, or use @path to point at files.",
+                            style=MUTED,
+                        )
+                    )
+                else:
+                    console.print(
+                        Text(
+                            "No task text — describe what you want or use @file.",
+                            style=MUTED,
+                        )
+                    )
+                continue
+
+            router_hint = ROUTER_DIRECTIVE_HINTS.get(session_directive or "", "")
+
+            # ---------- /build: skip router ----------
+            if session_directive == "build":
                 mode = "workflow"
                 chat_reply = None
+                trace_done(
+                    "Directive /build: skipping classifier; running the full build pipeline."
+                )
+            else:
+                trace_doing(
+                    "I'm having Codex classify this turn: full build pipeline versus a direct conversational reply (using your text and saved context)."
+                )
+                router_raw, router_err, router_rc = run_codex(
+                    build_router_prompt(task_clean, mem_block, router_hint),
+                    "Codex: routing (build vs conversation)...",
+                )
+                if router_rc != 0:
+                    trace_done(
+                        "Routing failed; not guessing BUILD/CHAT. Fix the error below, then retry."
+                    )
+                    console.print()
+                    _say(f"[cogem] ERROR: Codex routing exited with code {router_rc}.")
+                    if (router_err or "").strip():
+                        clip = (router_err or "").strip()[:1200]
+                        if len((router_err or "").strip()) > 1200:
+                            clip += "..."
+                        console.print(Text(clip, style=LOG_ERR))
+                    console.print(
+                        Text(
+                            "Hint: cogem runs `codex exec --skip-git-repo-check`. "
+                            "If this persists, check `codex` on PATH and disk permissions.",
+                            style=MUTED,
+                        )
+                    )
+                    console.print()
+                    _token_turn_footer()
+                    continue
+                mode, chat_reply = parse_build_or_chat(router_raw)
+                if mode == "chat" and looks_like_build_task(task_clean):
+                    mode = "workflow"
+                    chat_reply = None
 
             if mode == "chat":
                 if attach_block:
@@ -1394,7 +1538,7 @@ No markdown, no other text."""
                 "I'm calling Codex with your task, CODEX.md rules, and any saved memory so I can get a first implementation pass."
             )
             raw, draft_err, draft_rc = run_codex(
-                f"{mem_block}{attach_block}{CODEX_RULES}\n\nTASK:\n{task_clean}\n",
+                f"{mem_block}{attach_block}{mode_hint}{CODEX_RULES}\n\nTASK:\n{task_clean}\n",
                 "Codex: drafting initial implementation...",
             )
             if draft_rc != 0:
@@ -1464,7 +1608,7 @@ No markdown, no other text."""
                 "I'm calling Gemini now to critique the draft (risks, style, missing pieces)—independent of Codex's voice."
             )
             review, gem_rev_err, gem_rev_rc = run_gemini(
-                f"{mem_block}{attach_block}{GEMINI_RULES}\n\nCODE:\n{code}",
+                f"{mem_block}{attach_block}{mode_hint}{GEMINI_RULES}\n\nCODE:\n{code}",
                 "Gemini: writing structured review...",
             )
             if gem_rev_rc != 0:
@@ -1503,7 +1647,7 @@ No markdown, no other text."""
             )
             improved_raw, imp_err, imp_rc = run_codex(
                 f"""
-{mem_block}{attach_block}{CODEX_RULES}
+{mem_block}{attach_block}{mode_hint}{CODEX_RULES}
 
 You wrote:
 
@@ -1564,7 +1708,7 @@ Return ONLY code.
             )
             summary, gem_sum_err, gem_sum_rc = run_gemini(
                 f"""
-{mem_block}{attach_block}{GEMINI_RULES}
+{mem_block}{attach_block}{mode_hint}{GEMINI_RULES}
 
 Compare and summarize improvements.
 

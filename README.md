@@ -338,6 +338,18 @@ While Cogem is running, you can change models without restarting:
 | `/gemini/model <MODEL>` | Use `<MODEL>` for all Gemini calls this session |
 | `/gemini/model reset` | Restore the model from `--gemini-model` / `COGEM_GEMINI_MODEL` |
 
+### Session directives (task mode)
+
+Prefix the **first line** of your message with one of these. They stack with `@` mentions (attachments load into the build context when you end up in BUILD).
+
+| Command | Meaning |
+|---------|---------|
+| `/build …` | Force the full implementation pipeline (skips the BUILD/CHAT router). |
+| `/plan …` | Planning / design emphasis; the router still chooses BUILD vs CHAT unless you use `/build`. |
+| `/debug …` | Debugging emphasis (root cause, repro, targeted fixes). |
+| `/agent …` | Autonomous, multi-step coding style within the scoped task. |
+| `/ask …` | Pure Q&A (skips the router and the Codex+Gemini build loop for this turn). |
+
 ### @ file and folder mentions
 
 In your task text you can reference paths so their contents are included in **BUILD** prompts (Codex + Gemini):
