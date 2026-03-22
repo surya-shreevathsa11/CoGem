@@ -175,6 +175,8 @@ def main():
     console = Console()
     # Best-effort token totals per provider (parsed from CLI output when present).
     session_tokens = {"codex": 0, "gemini": 0}
+    # None = not asked yet; True/False = user chose whether to pass Codex --full-auto and Gemini --yolo.
+    auto_permissions: dict = {"granted": None}
 
     ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     AI_PATH = os.path.join(ROOT, ".ai")
@@ -220,6 +222,10 @@ def main():
             for s in stack:
                 if str(s).strip():
                     lines.append(f"  - {str(s).strip()}")
+            lines.append(
+                "If the current task names a different programming language, framework, or stack "
+                "(or explicitly switches away from the items above), follow the task for this deliverable."
+            )
         if isinstance(constraints, list) and constraints:
             lines.append("Constraints / rules:")
             for c in constraints:
@@ -452,13 +458,79 @@ def main():
             result = _run()
         return result.stdout or "", result.stderr or "", result.returncode
 
+    def _auto_permissions_from_env() -> Optional[bool]:
+        raw = os.environ.get("DEVAI_AUTO_PERMISSIONS", "").strip().lower()
+        if raw in ("1", "y", "yes", "true", "on"):
+            return True
+        if raw in ("0", "n", "no", "false", "off"):
+            return False
+        return None
+
+    def ensure_auto_permissions() -> None:
+        """
+        Codex/Gemini often block in headless mode until approvals are granted.
+        Ask once per session (or use DEVAI_AUTO_PERMISSIONS=yes|no).
+        """
+        if auto_permissions["granted"] is not None:
+            return
+        v = _auto_permissions_from_env()
+        if v is not None:
+            auto_permissions["granted"] = v
+            return
+        if not sys.stdin.isatty():
+            auto_permissions["granted"] = False
+            console.print(
+                Text(
+                    "[devai] Non-interactive stdin: not prompting for Codex/Gemini permissions. "
+                    "Set DEVAI_AUTO_PERMISSIONS=yes if builds hang or fail.",
+                    style=LOG_WARN,
+                )
+            )
+            return
+        console.print()
+        console.print(
+            Text(
+                "Non-interactive Codex and Gemini runs usually need explicit permission: "
+                "Codex adds --full-auto (sandboxed workspace write + on-request commands). "
+                "Gemini adds --yolo so headless tool steps are not stuck waiting for approval.",
+                style=MUTED,
+            )
+        )
+        console.print(
+            Text(
+                "Tip: set DEVAI_AUTO_PERMISSIONS=yes or no to skip this prompt.",
+                style=MUTED,
+            )
+        )
+        ans = console.input(
+            Text("Allow both for this devai session? [y/N]: ", style=TITLE)
+        ).strip().lower()
+        auto_permissions["granted"] = ans in ("y", "yes")
+        if not auto_permissions["granted"]:
+            console.print(
+                Text(
+                    "Continuing without --full-auto / --yolo. If subprocesses hang or exit with "
+                    "approval errors, re-run with DEVAI_AUTO_PERMISSIONS=yes.",
+                    style=LOG_WARN,
+                )
+            )
+
     def _codex_argv(prompt: str) -> List[str]:
         """codex exec with flags that avoid failing outside a git repo / trusted tree."""
         argv = ["codex", "exec", "--skip-git-repo-check"]
+        if auto_permissions.get("granted"):
+            argv.append("--full-auto")
         wd = os.environ.get("DEVAI_CODEX_WORKDIR", "").strip()
         if wd:
             argv.extend(["-C", os.path.abspath(wd)])
         argv.append(prompt)
+        return argv
+
+    def _gemini_argv(prompt: str) -> List[str]:
+        argv = ["gemini"]
+        if auto_permissions.get("granted"):
+            argv.append("--yolo")
+        argv.extend(["-p", prompt])
         return argv
 
     def _run_proc(args: List[str], cwd: Optional[str] = None):
@@ -485,7 +557,7 @@ def main():
         return stdout or "", stderr or "", rc
 
     def run_gemini(prompt: str, status_msg: str) -> Tuple[str, str, int]:
-        stdout, stderr, rc = run_cmd(["gemini", "-p", prompt], status_msg)
+        stdout, stderr, rc = run_cmd(_gemini_argv(prompt), status_msg)
         combined = (stdout or "") + "\n" + (stderr or "")
         _record_tokens("gemini", combined)
         return (stdout or "").strip(), stderr or "", rc
@@ -504,6 +576,12 @@ __MEMORY__
 BUILD = the user wants software development work: write or change code, scripts, apps, sites, APIs, CLIs, configs for projects, debugging/refactoring code, generating project files, implementation steps, or anything where producing/editing code or project artifacts is the main goal.
 
 CHAT = not that: greetings, thanks, small talk, general knowledge, non-coding questions, unrelated topics, or meta questions about you without a build task.
+
+Programming language / stack: If the user asks to build or change software using a specific language or framework (Python, JavaScript, Go, Rust, etc.), or to switch from one stack to another, that is always BUILD — not CHAT.
+
+ROUTING FORMAT (CRITICAL — machine-parsed):
+- Line 1 must be ONLY the ASCII English word BUILD or CHAT (not translated, not localized). No other word on line 1.
+- After line 1 you may write the CHAT reply in ordinary prose if mode is CHAT.
 
 If ambiguous, choose BUILD.
 
@@ -535,16 +613,24 @@ __TASK__
 
     def parse_build_or_chat(raw: str):
         """Return ('workflow', None) or ('chat', reply_text)."""
-        lines = raw.splitlines()
-        for i, line in enumerate(lines):
+        text = raw.lstrip("\ufeff").strip()
+        lines = text.splitlines()
+
+        def first_route_word(line: str) -> str:
             s = re.sub(r"[*_`#]", "", line).strip()
             if not s:
+                return ""
+            parts = s.split(None, 1)
+            return parts[0].upper().strip(".,:;!?\"'`")
+
+        for i, line in enumerate(lines):
+            w = first_route_word(line)
+            if not w:
                 continue
-            head = s.upper().rstrip(".!?:")
-            first = head.split()[0] if head.split() else ""
-            if first == "BUILD":
+            if w == "BUILD":
                 return "workflow", None
-            if first == "CHAT":
+            if w == "CHAT":
+                s = re.sub(r"[*_`#]", "", line).strip()
                 tokens = s.split(None, 1)
                 same_line = tokens[1].strip() if len(tokens) > 1 else ""
                 following = "\n".join(lines[i + 1 :]).strip()
@@ -557,6 +643,107 @@ __TASK__
                     )
                 return "chat", rest
         return "workflow", None
+
+    def looks_like_build_task(task: str) -> bool:
+        """Heuristic when the router mis-labels CHAT (e.g. coding-language or stack switch)."""
+        t = task.lower()
+        if len(t.strip()) < 4:
+            return False
+        intent = (
+            "build ",
+            "create ",
+            "make a ",
+            "write a ",
+            "implement ",
+            "portfolio",
+            "website",
+            "web site",
+            "landing",
+            "write ",
+            "code ",
+            " app",
+            "debug",
+            "refactor",
+            "fix ",
+            "add ",
+            "api",
+            "script",
+            "html",
+            "css",
+            "project",
+            "feature",
+            "frontend",
+            "backend",
+            "site ",
+            "cli",
+        )
+        if any(x in t for x in intent):
+            return True
+        # Common programming languages / runtimes / frameworks (stack switches still = build).
+        tech = (
+            "javascript",
+            "typescript",
+            "python",
+            "golang",
+            "using go",
+            " in go",
+            " with go",
+            " rust",
+            "java",
+            "kotlin",
+            "swift",
+            "ruby",
+            "php",
+            "csharp",
+            "c#",
+            "c++",
+            "react",
+            "vue",
+            "svelte",
+            "angular",
+            "next.js",
+            "nextjs",
+            "nuxt",
+            "astro",
+            "remix",
+            "express",
+            "fastapi",
+            "django",
+            "flask",
+            "spring",
+            "rails",
+            "laravel",
+            "dotnet",
+            "node",
+            "bun",
+            "deno",
+            "tailwind",
+            "webpack",
+            "vite",
+            "postgres",
+            "mongodb",
+            "sqlite",
+        )
+        if any(x in t for x in tech):
+            return True
+        non_en = (
+            "créer",
+            "creer",
+            "sitio",
+            "página",
+            "pagina",
+            "construir",
+            "sitio web",
+            "código",
+            "codigo",
+            "proyecto",
+            "aplicación",
+            "aplicacion",
+            "site web",
+            "développer",
+            "developper",
+        )
+        return any(x in t for x in non_en)
 
     def extract_persist_directives(text: str):
         """Strip PERSIST lines from model text; return (visible_reply, [(kind, value), ...])."""
@@ -829,6 +1016,8 @@ No markdown, no other text."""
             session_tokens["codex"] = 0
             session_tokens["gemini"] = 0
 
+            ensure_auto_permissions()
+
             trace_doing(
                 "I'm having Codex classify this turn: full build pipeline versus a direct conversational reply (using your text and saved context)."
             )
@@ -858,6 +1047,9 @@ No markdown, no other text."""
                 _token_turn_footer()
                 continue
             mode, chat_reply = parse_build_or_chat(router_raw)
+            if mode == "chat" and looks_like_build_task(task):
+                mode = "workflow"
+                chat_reply = None
 
             if mode == "chat":
                 trace_done(
