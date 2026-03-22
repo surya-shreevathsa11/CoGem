@@ -194,7 +194,7 @@ Complete **Sign in with Google** or set **`GEMINI_API_KEY`** as described in the
 ```bash
 cd ~
 git clone https://github.com/surya-shreevathsa11/CoGem.git
-cd <your-repo>
+cd <CoGem>
 ```
 
 Or clone your repo URL and `cd` into it.
