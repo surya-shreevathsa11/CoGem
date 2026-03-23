@@ -1319,14 +1319,19 @@ __TASK__
         _task_prompt_keys = KeyBindings()
 
         @_task_prompt_keys.add("enter")
-        def _submit_on_enter(event):
-            # Enter submits the prompt.
-            event.current_buffer.validate_and_handle()
+        def _enter_handler(event):
+            """
+            Enter submits; Shift+Enter inserts a newline.
 
-        @_task_prompt_keys.add("s-enter")
-        def _newline_on_shift_enter(event):
-            # Shift+Enter inserts a newline instead of submitting.
-            event.current_buffer.insert_text("\n")
+            Note: prompt_toolkit may map Shift+Enter to the same key as Enter.
+            We disambiguate using event.data, where terminals typically send
+            the ANSI sequence "\x1b[27;2;13~" for Shift+Enter.
+            """
+            d = event.data or ""
+            if "27;2;13" in d or "\x1b[27;2;13" in d:
+                event.current_buffer.insert_text("\n")
+                return
+            event.current_buffer.validate_and_handle()
 
         task_prompt_session = PromptSession(
             completer=CogemCompleter(),
