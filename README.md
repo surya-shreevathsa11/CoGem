@@ -345,7 +345,7 @@ If a flag is omitted, you can still set defaults with the environment variables 
 
 ### In-session commands
 
-On an interactive terminal, the main task prompt uses **prompt-style completion**: type `/` or `@` and use **Tab** (or keep typing) to open a **menu of suggestions** for session directives and paths under the project / cwd (same roots as `@` mentions).
+On an interactive terminal, the main task prompt uses **prompt-style completion**: type `/` or `@` and use **Tab** (or keep typing) to open a **two-column** menu (command/path + short description) with a **dark** theme. For colors closest to the Codex-style blue/grey look, use **Windows Terminal** or another **true-color** terminal. Set **`COGEM_NO_TRUE_COLOR=1`** if the menu colors look wrong on legacy consoles.
 
 While Cogem is running, you can change models without restarting:
 
@@ -401,14 +401,13 @@ For **frontend-first** builds (websites, landing pages, dashboards, HTML/CSS/JS 
 
 #### Stitch MCP (`stitch-mcp` on npm)
 
-The community **stitch-mcp** package is an MCP **server** that talks to Google’s Stitch API (with `gcloud` auth). Cogem can act as a minimal MCP **client** over stdio and call the generate tool when you opt in:
+The community **stitch-mcp** package is an MCP **server** that talks to Google’s Stitch API (with `gcloud` auth). Cogem acts as a minimal MCP **client** over stdio and calls the generate tool automatically for frontend tasks (unless you disable MCP):
 
 1. Install **Google Cloud SDK**, run `gcloud auth application-default login`, and set **`GOOGLE_CLOUD_PROJECT`** (see the [stitch-mcp README](https://www.npmjs.com/package/stitch-mcp)).
 2. Install **Node.js** so **`npx`** is available.
-3. Enable the Stitch MCP stage in cogem:
-   - `COGEM_STITCH_MCP=1`
-   - Defaults: `COGEM_STITCH_MCP_CMD=npx` and `COGEM_STITCH_MCP_ARGS=-y stitch-mcp` (override if needed).
+3. (Optional) Override defaults if needed: `COGEM_STITCH_MCP_CMD=npx` and `COGEM_STITCH_MCP_ARGS=-y stitch-mcp`.
 4. Run a frontend-style task in cogem; the adapter chain will try **CLI → MCP → HTTP → manual**.
+5. To disable MCP explicitly: `COGEM_STITCH_MCP=0`.
 
 If MCP fails (auth, API, or tool schema), cogem **falls back** to manual export as before. Tool name defaults to `generate_screen_from_text`; override with `COGEM_STITCH_MCP_TOOL` if your server exposes a different name.
 
@@ -435,7 +434,7 @@ There is **no guaranteed public Stitch API** in cogem: integration is **pluggabl
 | `COGEM_STITCH_HTTP_TOKEN` | Optional `Authorization: Bearer` for HTTP adapter |
 | `COGEM_STITCH_TIMEOUT_SEC` | Timeout for CLI/HTTP Stitch attempts (default `300`) |
 | `COGEM_STITCH_BROWSER` | `1` to acknowledge browser automation (not implemented; kept off by default) |
-| `COGEM_STITCH_MCP` | `1` / `true` — enable MCP stdio client to `npx stitch-mcp` (after CLI, before HTTP) |
+| `COGEM_STITCH_MCP` | MCP stdio client toggle for `npx stitch-mcp` (default: **enabled**; set `0`/`false` to disable) |
 | `COGEM_STITCH_MCP_CMD` | Command to launch MCP server (default `npx`) |
 | `COGEM_STITCH_MCP_ARGS` | Args for the server (default `-y stitch-mcp`) |
 | `COGEM_STITCH_MCP_TOOL` | MCP tool name (default `generate_screen_from_text`) |

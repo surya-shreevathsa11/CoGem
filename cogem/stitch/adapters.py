@@ -42,7 +42,7 @@ def try_stitch_adapters(stitch_prompt: str) -> StitchResult:
     """
     Try adapters in order:
     1. COGEM_STITCH_CLI — subprocess (stdin or temp file)
-    2. COGEM_STITCH_MCP — MCP stdio client to `npx stitch-mcp` (requires COGEM_STITCH_MCP=1)
+    2. COGEM_STITCH_MCP — MCP stdio client to `npx stitch-mcp` (on by default; set COGEM_STITCH_MCP=0 to disable)
     3. COGEM_STITCH_HTTP_URL — HTTP POST JSON { "prompt": "..." }
     4. COGEM_STITCH_BROWSER — optional stub (disabled unless set; not implemented)
     5. manual — always succeeds as fallback
@@ -79,7 +79,7 @@ def _try_mcp_adapter(prompt: str) -> StitchResult:
         return StitchResult.unavailable("mcp", "mcp_stdio not available")
 
     if not stitch_mcp_enabled():
-        return StitchResult.unavailable("mcp", "set COGEM_STITCH_MCP=1 to enable")
+        return StitchResult.unavailable("mcp", "disabled (set COGEM_STITCH_MCP=1 to enable)")
 
     html, detail = call_stitch_mcp_generate(prompt)
     if html and looks_like_ui_content(html):

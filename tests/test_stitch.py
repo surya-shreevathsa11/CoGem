@@ -53,6 +53,8 @@ def test_stitch_mcp_flag(monkeypatch):
     from cogem.stitch.mcp_stdio import stitch_mcp_enabled
 
     monkeypatch.delenv("COGEM_STITCH_MCP", raising=False)
+    assert stitch_mcp_enabled()
+    monkeypatch.setenv("COGEM_STITCH_MCP", "0")
     assert not stitch_mcp_enabled()
     monkeypatch.setenv("COGEM_STITCH_MCP", "1")
     assert stitch_mcp_enabled()

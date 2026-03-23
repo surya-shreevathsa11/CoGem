@@ -160,6 +160,7 @@ def main():
         from prompt_toolkit import PromptSession
         from prompt_toolkit.completion import Completer
         from prompt_toolkit.history import InMemoryHistory
+        from prompt_toolkit.output.color_depth import ColorDepth
         from prompt_toolkit.shortcuts import CompleteStyle
         from prompt_toolkit.styles import Style
     except ImportError:
@@ -168,6 +169,7 @@ def main():
         CompleteStyle = None  # type: ignore
         InMemoryHistory = None  # type: ignore
         Style = None  # type: ignore
+        ColorDepth = None  # type: ignore
 
     from cogem.stitch import (
         build_stitch_prompt,
@@ -968,6 +970,12 @@ __TASK__
     )
     _MAX_AT_COMPLETIONS = 500
 
+    def _truncate_meta(s: str, max_len: int = 72) -> str:
+        s = (s or "").strip()
+        if len(s) <= max_len:
+            return s
+        return s[: max_len - 1] + "…"
+
     def _slash_task_prefix(text_before_cursor: str) -> Optional[str]:
         """Return current first-word slash token (e.g. '/build'), '' for empty line, or None."""
         if "\n" in text_before_cursor:
@@ -1062,6 +1070,10 @@ __TASK__
     task_prompt_session = None
     if PromptSession is not None and Completer is not None and sys.stdin.isatty():
 
+        # Per-item styles stack with class:completion-menu.* (see prompt_toolkit layout/menus.py).
+        _CMP = "fg:#5ccfff"
+        _CMP_SEL = "fg:#ffffff bg:#345070 bold noreverse"
+
         class CogemCompleter(Completer):
             def get_completions(self, document, complete_event):
                 from prompt_toolkit.completion import Completion
@@ -1080,14 +1092,16 @@ __TASK__
                             text = rel
                             disp = rel
                         if rel.endswith("/"):
-                            meta = "Folder — @ attaches a directory listing in BUILD prompts"
+                            meta = "Directory — tree listing in BUILD prompts"
                         else:
-                            meta = "File — @ attaches file contents in BUILD prompts"
+                            meta = "File — contents inlined in BUILD prompts"
                         yield Completion(
                             text,
                             start_position=-len(seg_replace),
                             display=disp,
-                            display_meta=meta,
+                            display_meta=_truncate_meta(meta),
+                            style=_CMP,
+                            selected_style=_CMP_SEL,
                         )
                     return
 
@@ -1100,7 +1114,9 @@ __TASK__
                             cmd,
                             start_position=0,
                             display=cmd,
-                            display_meta=desc,
+                            display_meta=_truncate_meta(desc),
+                            style=_CMP,
+                            selected_style=_CMP_SEL,
                         )
                     return
                 slash_start = before.find("/")
@@ -1114,23 +1130,35 @@ __TASK__
                         cmd,
                         start_position=-replace_len,
                         display=cmd,
-                        display_meta=desc,
+                        display_meta=_truncate_meta(desc),
+                        style=_CMP,
+                        selected_style=_CMP_SEL,
                     )
 
+        # Defaults use light grey (#bbbbbb) + `reverse` on selection — override fully for a dark Codex-like menu.
         _completion_style = (
             Style.from_dict(
                 {
-                    # Dark menu like Codex CLI: blue command column, grey description column
-                    "completion-menu": "bg:#000000",
-                    "completion-menu.completion": "fg:#5eb8ff",
-                    "completion-menu.completion.current": "fg:#8ed0ff bg:#2d3d52",
-                    "completion-menu.meta.completion": "fg:#b8b8b8",
-                    "completion-menu.meta.completion.current": "fg:#e0e0e0 bg:#2d3d52",
+                    "completion-menu": "bg:#000000 #cccccc",
+                    "completion-menu.completion": "noreverse",
+                    "completion-menu.completion.current": "noreverse",
+                    "completion-menu.meta.completion": "noreverse",
+                    "completion-menu.meta.completion.current": "noreverse",
+                    "completion-toolbar": "bg:#1a1a1a #888888",
+                    "completion-toolbar.completion": "fg:#5ccfff",
+                    "completion-toolbar.completion.current": "fg:#ffffff bg:#345070",
                 }
             )
             if Style is not None
             else None
         )
+
+        _cd = None
+        if ColorDepth is not None and (
+            os.environ.get("COGEM_NO_TRUE_COLOR", "").strip().lower()
+            not in ("1", "true", "yes")
+        ):
+            _cd = ColorDepth.TRUE_COLOR
 
         task_prompt_session = PromptSession(
             completer=CogemCompleter(),
@@ -1138,6 +1166,8 @@ __TASK__
             complete_while_typing=True,
             complete_style=CompleteStyle.COLUMN,
             style=_completion_style,
+            color_depth=_cd,
+            reserve_space_for_menu=14,
         )
 
     def read_task_line(prompt: str = "What would you like to do? ") -> str:
@@ -1883,9 +1913,17 @@ No markdown, no other text."""
                             f"Stitch: received UI via adapter ({sr.adapter_name}). Continuing with Codex + Gemini."
                         )
                     else:
-                        trace_done(
-                            "Stitch: direct integration unavailable; using manual handoff (prompt + export)."
-                        )
+                        reason = (sr.detail or "").strip()
+                        if reason:
+                            reason = reason.replace("\n", " ")[:220]
+                            trace_done(
+                                "Stitch: direct integration unavailable; using manual handoff "
+                                f"(reason: {reason})."
+                            )
+                        else:
+                            trace_done(
+                                "Stitch: direct integration unavailable; using manual handoff (prompt + export)."
+                            )
                         console.print()
                         section_rule("Stitch prompt (copy into Google Stitch)")
                         console.print()

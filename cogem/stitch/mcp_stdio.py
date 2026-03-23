@@ -23,7 +23,10 @@ _DEFAULT_GENERATE = "generate_screen_from_text"
 
 def stitch_mcp_enabled() -> bool:
     raw = (os.environ.get("COGEM_STITCH_MCP") or "").strip().lower()
-    return raw in ("1", "true", "yes", "on")
+    if raw in ("0", "false", "no", "off", "disabled"):
+        return False
+    # Default ON for frontend Stitch-first flow.
+    return True
 
 
 def _mcp_argv() -> List[str]:
