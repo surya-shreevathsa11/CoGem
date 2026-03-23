@@ -471,6 +471,10 @@ There is **no guaranteed public Stitch API** in cogem: integration is **pluggabl
 | `COGEM_AT_MAX_FILE_BYTES` | Max bytes read per `@` file (default `400000`) |
 | `COGEM_AT_MAX_TOTAL_CHARS` | Max total characters for all `@` attachments in one turn (default `120000`) |
 | `COGEM_AT_MAX_PDF_PAGES` | Max pages extracted from a PDF `@` mention (default `30`) |
+| `COGEM_AUTO_REPO_CONTEXT` | `1`/`0` — auto-retrieve relevant repo snippets for BUILD prompts (keyword + dependency graph) |
+| `COGEM_AUTO_REPO_CONTEXT_MAX_CHARS` | Cap for injected auto repo context text (default `8000`) |
+| `COGEM_AUTO_REPO_CONTEXT_MAX_FILES` | Max files to inject (default `6`) |
+| `COGEM_AUTO_REPO_CONTEXT_MAX_DEPTH` | Dependency expansion depth (default `2`) |
 | `COGEM_STITCH` | `1` (default) / `0` — enable or disable the Stitch stage for UI-heavy tasks |
 | `COGEM_STITCH_CLI` | Optional: executable for a Stitch adapter (stdin sends the prompt unless `COGEM_STITCH_CLI_STDIN=0` + temp file) |
 | `COGEM_STITCH_CLI_ARGS` | Extra argv appended after the CLI command |

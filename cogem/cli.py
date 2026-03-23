@@ -185,6 +185,10 @@ def main():
     )
     from cogem.stitch.adapters import format_stitch_context_for_codex, looks_like_ui_content
     from cogem.task_intent import build_prerequisite_first_prompt, detect_prerequisite_first_task
+    from cogem.repo_awareness import (
+        AutoRepoContextConfig,
+        auto_repo_context_block_for_task,
+    )
 
     _ap = argparse.ArgumentParser(
         prog="cogem",
@@ -2933,6 +2937,37 @@ No markdown, no other text."""
             )
             live_reasoning_banner_build(task, mem_block)
 
+            auto_repo_context_on = (
+                os.environ.get("COGEM_AUTO_REPO_CONTEXT", "1").strip().lower()
+                not in ("0", "false", "no", "off", "disabled")
+            )
+            auto_repo_max_chars = int(
+                os.environ.get("COGEM_AUTO_REPO_CONTEXT_MAX_CHARS", "8000")
+            )
+            auto_repo_max_files = int(
+                os.environ.get("COGEM_AUTO_REPO_CONTEXT_MAX_FILES", "6")
+            )
+            auto_repo_max_depth = int(
+                os.environ.get("COGEM_AUTO_REPO_CONTEXT_MAX_DEPTH", "2")
+            )
+
+            auto_context_block = ""
+            if auto_repo_context_on:
+                try:
+                    auto_context_block = auto_repo_context_block_for_task(
+                        task=task_clean,
+                        repo_root=_repo_root(),
+                        config=AutoRepoContextConfig(
+                            enabled=True,
+                            max_chars=auto_repo_max_chars,
+                            max_files=auto_repo_max_files,
+                            max_depth=auto_repo_max_depth,
+                        ),
+                    )
+                except Exception:
+                    # Repo awareness should never break builds.
+                    auto_context_block = ""
+
             frontend_detected = detect_frontend_task(task_clean)
             stitch_frontend_heavy = detect_stitch_frontend_heavy_task(task_clean)
             prereq_first = detect_prerequisite_first_task(task_clean)
@@ -3052,7 +3087,7 @@ No markdown, no other text."""
                     "When returning output for a project, use FILE: blocks for all changes.\n"
                 )
             raw, draft_err, draft_rc = run_codex(
-                f"{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}"
+                f"{mem_block}{attach_block}{auto_context_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}"
                 f"{tdd_extra_hint}\n\nTASK:\n{task_clean}\n",
                 "Codex: drafting initial implementation...",
             )
