@@ -545,12 +545,53 @@ def main():
         seen = set()
         chunks: List[str] = []
         total = 0
+        symbol_index_enabled = (
+            os.environ.get("COGEM_SYMBOL_INDEX", "1").strip().lower()
+            not in ("0", "false", "no", "off", "disabled")
+        )
+        symbol_index_cache = getattr(expand_at_mentions, "_symbol_index_cache", None)
         for rel in paths_order:
             if rel in seen:
                 continue
             seen.add(rel)
             abs_p = _resolve_mention_path(rel)
             if not abs_p or not _path_allowed_for_mention(abs_p, roots):
+                # Symbol resolution (ctags/universal-ctags) best-effort:
+                # allow `@MyClassName` to inline the definition snippet.
+                injected_symbol = False
+                if symbol_index_enabled:
+                    try:
+                        from cogem.symbols import SymbolIndex
+
+                        if symbol_index_cache is None:
+                            symbol_index_cache = SymbolIndex(_repo_root())
+                            setattr(
+                                expand_at_mentions,
+                                "_symbol_index_cache",
+                                symbol_index_cache,
+                            )
+                        res = symbol_index_cache.resolve_symbol_to_snippet(
+                            rel, context_lines=20, max_chars=max_b
+                        )
+                        if res and _path_allowed_for_mention(res.tag.path, roots):
+                            try:
+                                label = os.path.relpath(res.tag.path, ROOT)
+                            except ValueError:
+                                label = res.tag.path
+                            block = (
+                                f"### @{rel} (symbol in {label}:{res.start_line}-{res.end_line})\n"
+                                f"```\n{res.snippet}\n```\n\n"
+                            )
+                            if total + len(block) <= max_total:
+                                chunks.append(block)
+                                total += len(block)
+                                injected_symbol = True
+                    except Exception:
+                        injected_symbol = False
+
+                if injected_symbol:
+                    continue
+
                 chunks.append(
                     f"### @{rel}\nNot found or not allowed (paths must stay under the project, "
                     f"current working directory, or COGEM_CODEX_WORKDIR).\n\n"
@@ -1830,6 +1871,13 @@ __TASK__
         _CMP = "fg:#5ccfff"
         _CMP_SEL = "fg:#ffffff bg:#345070 bold noreverse"
 
+        repo_root_for_symbols = _repo_root()
+        symbol_index_box = {"idx": None}
+        symbols_completion_enabled = (
+            os.environ.get("COGEM_SYMBOL_COMPLETIONS", "1").strip().lower()
+            not in ("0", "false", "no", "off", "disabled")
+        )
+
         class CogemCompleter(Completer):
             def get_completions(self, document, complete_event):
                 from prompt_toolkit.completion import Completion
@@ -1859,6 +1907,49 @@ __TASK__
                             style=_CMP,
                             selected_style=_CMP_SEL,
                         )
+
+                    # Symbol completion (ctags/universal-ctags) in addition to @path.
+                    # Only attempt when the partial is "symbol-like" (no path separators).
+                    if (
+                        symbols_completion_enabled
+                        and partial
+                        and "/" not in partial
+                        and "\\" not in partial
+                        and not partial.startswith(".")
+                    ):
+                        try:
+                            from cogem.symbols import SymbolIndex
+
+                            if symbol_index_box["idx"] is None:
+                                symbol_index_box["idx"] = SymbolIndex(
+                                    repo_root_for_symbols
+                                )
+
+                            idx = symbol_index_box["idx"]
+                            sym_tags = idx.symbols_starting_with(
+                                partial, limit=_MAX_AT_COMPLETIONS
+                            )
+                            for tag in sym_tags:
+                                sym = tag.name
+                                text = '"' + sym + '"' if quoted else sym
+                                disp = sym
+                                try:
+                                    relp = os.path.relpath(tag.path, ROOT)
+                                except ValueError:
+                                    relp = tag.path
+                                kind = (tag.kind or "symbol").strip() or "symbol"
+                                meta = f"{kind} — {relp}"
+                                yield Completion(
+                                    text,
+                                    start_position=-len(seg_replace),
+                                    display=disp,
+                                    display_meta=_truncate_meta(meta),
+                                    style=_CMP,
+                                    selected_style=_CMP_SEL,
+                                )
+                        except Exception:
+                            pass
+
                     return
 
                 sp = _slash_task_prefix(before)

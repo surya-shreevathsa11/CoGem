@@ -416,6 +416,10 @@ In your task text you can reference paths so their contents are included in **BU
 - `@src` or `@docs/` — directory tree listing (depth and entry limits apply)
 - `@"path with spaces/file.txt"` — use double quotes inside the `@…` form for spaces
 
+Symbol mentions (ctags/universal-ctags; best-effort):
+- `@MyClassName` or `@my_function` — if `universal-ctags`/`ctags` is available on PATH, Cogem will inline a short snippet around the symbol definition (instead of requiring an explicit `@path/to/file`).
+You can disable this with `COGEM_SYMBOL_INDEX=0`.
+
 Paths must resolve under the **repo root**, your **current working directory**, or **`COGEM_CODEX_WORKDIR`**. Anything else is skipped with a note in the attachment block.
 
 Optional limits: `COGEM_AT_MAX_FILE_BYTES` (default `400000`), `COGEM_AT_MAX_TOTAL_CHARS` (default `120000`) for the whole attachment block.
@@ -471,6 +475,7 @@ There is **no guaranteed public Stitch API** in cogem: integration is **pluggabl
 | `COGEM_AT_MAX_FILE_BYTES` | Max bytes read per `@` file (default `400000`) |
 | `COGEM_AT_MAX_TOTAL_CHARS` | Max total characters for all `@` attachments in one turn (default `120000`) |
 | `COGEM_AT_MAX_PDF_PAGES` | Max pages extracted from a PDF `@` mention (default `30`) |
+| `COGEM_SYMBOL_INDEX` | `1` (default) / `0` — enable ctags-based symbol resolution for `@MyClassName` mentions (best-effort; requires `universal-ctags`/`ctags` on PATH) |
 | `COGEM_AUTO_REPO_CONTEXT` | `1`/`0` — auto-retrieve relevant repo snippets for BUILD prompts (keyword + dependency graph) |
 | `COGEM_AUTO_REPO_CONTEXT_MAX_CHARS` | Cap for injected auto repo context text (default `8000`) |
 | `COGEM_AUTO_REPO_CONTEXT_MAX_FILES` | Max files to inject (default `6`) |
