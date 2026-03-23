@@ -6,7 +6,7 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 
 @dataclass(frozen=True)
@@ -238,10 +238,14 @@ class SymbolIndex:
             kl = (k or "").lower()
             if "class" in kl:
                 return 100
+            if "interface" in kl:
+                return 95
             if "struct" in kl or "enum" in kl:
                 return 100
-            if "function" in kl or "method" in kl:
+            if "function" in kl:
                 return 90
+            if "method" in kl:
+                return 85
             if "variable" in kl or "var" in kl or "member" in kl:
                 return 10
             return 10
@@ -311,6 +315,128 @@ class SymbolIndex:
             end_line=best_end,
         )
 
+    def resolve_symbol_to_snippet_preferring_paths(
+        self,
+        symbol: str,
+        *,
+        preferred_paths: Optional[Iterable[str]] = None,
+        context_lines: int = 18,
+        max_chars: int = 6000,
+    ) -> Optional[ResolvedSymbolSnippet]:
+        """
+        Best-effort resolve, but preferentially selects tags whose file is in
+        `preferred_paths` (absolute paths). If no preferred tags exist, it
+        falls back to unfiltered selection.
+        """
+        symbol = (symbol or "").strip()
+        if not symbol:
+            return None
+        if _looks_like_filename(symbol):
+            return None
+
+        pref: Set[str] = set()
+        if preferred_paths:
+            for p in preferred_paths:
+                if not p:
+                    continue
+                pref.add(os.path.realpath(p))
+
+        tags = self.ensure_built()
+        if not tags:
+            return None
+
+        matches = [t for t in tags if t.name == symbol]
+        if not matches:
+            matches = [t for t in tags if symbol in t.name]
+        if not matches:
+            return None
+
+        uniq: Dict[Tuple[str, int], TagMatch] = {}
+        for t in matches:
+            uniq[(t.path, t.line)] = t
+        candidates = list(uniq.values())
+
+        def _kind_points(k: str) -> int:
+            kl = (k or "").lower()
+            if "class" in kl:
+                return 100
+            if "interface" in kl:
+                return 95
+            if "struct" in kl or "enum" in kl:
+                return 100
+            if "function" in kl:
+                return 90
+            if "method" in kl:
+                return 85
+            if "variable" in kl or "var" in kl or "member" in kl:
+                return 10
+            return 10
+
+        def _ext_points(path: str) -> int:
+            ext = os.path.splitext(path)[1].lower()
+            if ext in (".py", ".ts", ".tsx", ".js", ".jsx"):
+                return 30
+            if ext in (".c", ".cc", ".cpp", ".cxx"):
+                return 25
+            if ext in (".h", ".hh", ".hpp", ".hxx"):
+                return 5
+            return 10
+
+        preferred_candidates = [c for c in candidates if c.path in pref] if pref else []
+        use = preferred_candidates if preferred_candidates else candidates
+
+        best_tag: Optional[TagMatch] = None
+        best_score = -1
+        best_snippet = ""
+        best_start = 1
+        best_end = 1
+
+        for cand in use:
+            try:
+                with open(cand.path, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.read().splitlines()
+            except OSError:
+                continue
+
+            idx = max(0, cand.line - 1)
+            start_line = max(1, idx + 1 - context_lines)
+            end_line = min(len(lines), idx + 1 + context_lines)
+            snippet_lines = lines[start_line - 1 : end_line]
+            snippet = "\n".join(snippet_lines).strip()
+            raw_snippet_len = len(snippet)
+
+            if raw_snippet_len > max_chars:
+                snippet = snippet[: max(0, max_chars - 20)] + "\n...[truncated]"
+
+            size_points = min(30, raw_snippet_len // 200)
+            score = _kind_points(cand.kind) + _ext_points(cand.path) + size_points
+
+            if score > best_score or (
+                score == best_score
+                and (
+                    (cand.line > (best_tag.line if best_tag else -1))
+                    or (
+                        cand.line == (best_tag.line if best_tag else -1)
+                        and cand.path < (best_tag.path if best_tag else "~")
+                    )
+                )
+            ):
+                best_score = score
+                best_tag = cand
+                best_snippet = snippet
+                best_start = start_line
+                best_end = end_line
+
+        if not best_tag:
+            return None
+
+        return ResolvedSymbolSnippet(
+            tag=best_tag,
+            snippet=best_snippet,
+            start_line=best_start,
+            end_line=best_end,
+        )
+
     def best_tag_for_symbol(self, symbol: str) -> Optional[TagMatch]:
         """
         Best-effort selection among all tags for a given symbol name.
@@ -332,10 +458,16 @@ class SymbolIndex:
 
         def _kind_points(k: str) -> int:
             kl = (k or "").lower()
-            if "class" in kl or "struct" in kl or "enum" in kl:
+            if "class" in kl:
                 return 100
-            if "function" in kl or "method" in kl:
+            if "interface" in kl:
+                return 95
+            if "struct" in kl or "enum" in kl:
+                return 100
+            if "function" in kl:
                 return 90
+            if "method" in kl:
+                return 85
             if "variable" in kl or "var" in kl or "member" in kl:
                 return 10
             return 10
@@ -382,10 +514,16 @@ class SymbolIndex:
 
         def _kind_points(k: str) -> int:
             kl = (k or "").lower()
-            if "class" in kl or "struct" in kl or "enum" in kl:
+            if "class" in kl:
                 return 100
-            if "function" in kl or "method" in kl:
+            if "interface" in kl:
+                return 95
+            if "struct" in kl or "enum" in kl:
+                return 100
+            if "function" in kl:
                 return 90
+            if "method" in kl:
+                return 85
             if "variable" in kl or "var" in kl or "member" in kl:
                 return 10
             return 10
@@ -422,5 +560,81 @@ class SymbolIndex:
         items = list(best_by_name.values())
         # Best kind first; deterministic secondary order by name.
         items.sort(key=lambda t: (-_kind_points(t.kind), t.name))
+        return items[:limit]
+
+    def symbols_fuzzy_search(
+        self, query: str, *, limit: int = 30
+    ) -> List[TagMatch]:
+        """
+        Best-effort fuzzy search for symbol names using a subsequence matcher.
+        """
+        q = (query or "").strip().lower()
+        if not q:
+            return []
+
+        tags = self.ensure_built()
+        if not tags:
+            return []
+
+        def _fuzzy_score(needle: str, hay: str) -> int:
+            # Subsequence match score with streak bonuses.
+            n = (needle or "").lower()
+            h = (hay or "").lower()
+            if not n or not h:
+                return 0
+            i = 0
+            score = 0
+            streak = 0
+            for ch in h:
+                if i < len(n) and ch == n[i]:
+                    i += 1
+                    streak += 1
+                    score += 10 * streak
+                else:
+                    streak = 0
+            return score if i == len(n) else 0
+
+        def _kind_points(k: str) -> int:
+            kl = (k or "").lower()
+            if "class" in kl or "struct" in kl or "enum" in kl:
+                return 100
+            if "interface" in kl:
+                return 95
+            if "function" in kl:
+                return 90
+            if "method" in kl:
+                return 85
+            if "variable" in kl or "var" in kl or "member" in kl:
+                return 10
+            return 10
+
+        def _ext_points(path: str) -> int:
+            ext = os.path.splitext(path)[1].lower()
+            if ext in (".py", ".ts", ".tsx", ".js", ".jsx"):
+                return 30
+            if ext in (".c", ".cc", ".cpp", ".cxx"):
+                return 25
+            if ext in (".h", ".hh", ".hpp", ".hxx"):
+                return 5
+            return 10
+
+        best_by_name: Dict[str, Tuple[TagMatch, int]] = {}
+        for t in tags:
+            if not t.name:
+                continue
+            fscore = _fuzzy_score(q, t.name)
+            if fscore <= 0:
+                continue
+            # Combine fuzzy score with structural preferences.
+            base = _kind_points(t.kind) + _ext_points(t.path)
+            total = fscore + base
+            prev = best_by_name.get(t.name)
+            if prev is None or total > prev[1]:
+                best_by_name[t.name] = (t, total)
+
+        items = [v[0] for v in best_by_name.values()]
+        items.sort(key=lambda t: (-(_kind_points(t.kind) + _ext_points(t.path)), t.name))
+
+        # Enforce overall limit; stable ranking within the best matches.
         return items[:limit]
 

@@ -151,7 +151,7 @@ def main():
     import urllib.error
     from pathlib import Path
     from datetime import datetime, timezone
-    from typing import List, Optional, Tuple
+    from typing import List, Optional, Set, Tuple
 
     import threading
 
@@ -189,6 +189,7 @@ def main():
         AutoRepoContextConfig,
         auto_repo_context_block_for_task,
     )
+    from cogem.graph import build_symbol_dependency_context_from_py_files
 
     _ap = argparse.ArgumentParser(
         prog="cogem",
@@ -1072,6 +1073,7 @@ def main():
         "node",
         "npm",
         "npx",
+        "pyright",
         "yarn",
         "pnpm",
         "go",
@@ -1166,6 +1168,18 @@ def main():
         """Best-effort: run TypeScript typecheck when tsconfig exists."""
         kind = _detect_repo_kind()
         if kind != "node":
+            if kind == "python":
+                typecheck_pyright_on = (
+                    os.environ.get("COGEM_TYPECHECK_PYRIGHT", "1").strip().lower()
+                    not in ("0", "false", "no", "off", "disabled")
+                )
+                if not typecheck_pyright_on:
+                    return None
+                # Best-effort Pyright type checking for Python projects.
+                if shutil.which("pyright"):
+                    # Uses pyright's config discovery when a pyrightconfig.json exists.
+                    return "pyright --verifytypes ."
+                return None
             return None
         if _repo_has("tsconfig.json"):
             return "npx tsc --noEmit"
@@ -1845,8 +1859,58 @@ __TASK__
         for e in entries:
             if e.startswith("."):
                 continue
-            if prefix and not e.startswith(prefix):
+            if prefix:
+                out_prefix = e.startswith(prefix)
+                if out_prefix:
+                    full = os.path.join(d, e)
+                    if parent_rel:
+                        rel = f"{parent_rel}/{e}".replace("\\", "/")
+                    else:
+                        rel = e
+                    if os.path.isdir(full):
+                        rel += "/"
+                    out.append(rel)
+                    continue
+
+                # Fuzzy fallback only when prefix matching produces nothing.
+                fuzzy_enabled = (
+                    os.environ.get("COGEM_FUZZY_AT_COMPLETIONS", "1").strip().lower()
+                    not in ("0", "false", "no", "off", "disabled")
+                )
+                if fuzzy_enabled:
+                    def _fuzzy_score(needle: str, hay: str) -> int:
+                        n = (needle or "").lower()
+                        h = (hay or "").lower()
+                        if not n or not h:
+                            return 0
+                        i = 0
+                        score = 0
+                        streak = 0
+                        for ch in h:
+                            if i < len(n) and ch == n[i]:
+                                i += 1
+                                streak += 1
+                                score += 10 * streak
+                            else:
+                                streak = 0
+                        return score if i == len(n) else 0
+
+                    score = _fuzzy_score(prefix, e)
+                    if score > 0:
+                        # Insert into a temporary list with score.
+                        # We'll sort later if prefix matches were empty.
+                        if "_fuzzy" not in locals():
+                            _fuzzy: List[Tuple[int, str]] = []
+                        full = os.path.join(d, e)
+                        if parent_rel:
+                            rel = f"{parent_rel}/{e}".replace("\\", "/")
+                        else:
+                            rel = e
+                        if os.path.isdir(full):
+                            rel += "/"
+                        _fuzzy.append((score, rel))
                 continue
+
             full = os.path.join(d, e)
             if parent_rel:
                 rel = f"{parent_rel}/{e}".replace("\\", "/")
@@ -1855,7 +1919,16 @@ __TASK__
             if os.path.isdir(full):
                 rel += "/"
             out.append(rel)
-        return out
+
+        if out:
+            return out
+
+        # Prefix match empty: apply fuzzy candidates.
+        fuzzy = locals().get("_fuzzy") or []
+        if not fuzzy:
+            return []
+        fuzzy.sort(key=lambda x: -x[0])
+        return [rel for _score, rel in fuzzy[:_MAX_AT_COMPLETIONS]]
 
     def _complete_rel_paths_under_roots(partial: str) -> List[str]:
         merged: set[str] = set()
@@ -1891,12 +1964,12 @@ __TASK__
                     for rel in rels[:_MAX_AT_COMPLETIONS]:
                         if quoted:
                             text = '"' + rel + '"'
-                            disp = text
+                            disp = "FILE " + text
                         else:
                             text = rel
-                            disp = rel
+                            disp = "FILE " + rel
                         if rel.endswith("/"):
-                            meta = "Directory — tree listing in BUILD prompts"
+                            meta = "File — directory listing in BUILD prompts"
                         else:
                             meta = "File — contents inlined in BUILD prompts"
                         yield Completion(
@@ -1929,10 +2002,20 @@ __TASK__
                             sym_tags = idx.symbols_starting_with(
                                 partial, limit=_MAX_AT_COMPLETIONS
                             )
+                            fuzzy_symbols = (
+                                os.environ.get("COGEM_FUZZY_SYMBOL_COMPLETIONS", "1")
+                                .strip()
+                                .lower()
+                                not in ("0", "false", "no", "off", "disabled")
+                            )
+                            if fuzzy_symbols and not sym_tags:
+                                sym_tags = idx.symbols_fuzzy_search(
+                                    partial, limit=_MAX_AT_COMPLETIONS
+                                )
                             for tag in sym_tags:
                                 sym = tag.name
                                 text = '"' + sym + '"' if quoted else sym
-                                disp = sym
+                                disp = "SYM " + sym
                                 try:
                                     relp = os.path.relpath(tag.path, ROOT)
                                 except ValueError:
@@ -3045,19 +3128,121 @@ No markdown, no other text."""
             auto_context_block = ""
             if auto_repo_context_on:
                 try:
-                    auto_context_block = auto_repo_context_block_for_task(
-                        task=task_clean,
-                        repo_root=_repo_root(),
-                        config=AutoRepoContextConfig(
-                            enabled=True,
-                            max_chars=auto_repo_max_chars,
-                            max_files=auto_repo_max_files,
-                            max_depth=auto_repo_max_depth,
-                        ),
+                    vector_rag_on = (
+                        os.environ.get("COGEM_VECTOR_RAG", "0").strip().lower()
+                        not in ("0", "false", "no", "off", "disabled")
                     )
+
+                    if vector_rag_on:
+                        try:
+                            from cogem.vector_index import (
+                                VectorIndexConfig,
+                                semantic_repo_context_block_for_task,
+                            )
+
+                            auto_context_block = semantic_repo_context_block_for_task(
+                                repo_root=_repo_root(),
+                                task=task_clean,
+                                config=VectorIndexConfig(
+                                    enabled=True,
+                                    rebuild=bool(
+                                        os.environ.get(
+                                            "COGEM_VECTOR_REBUILD", "0"
+                                        ).strip()
+                                        .lower()
+                                        in ("1", "true", "yes", "on")
+                                    ),
+                                    top_k=int(
+                                        os.environ.get("COGEM_VECTOR_TOP_K", "8")
+                                    ),
+                                    max_context_chars=auto_repo_max_chars,
+                                    max_chunk_chars=int(
+                                        os.environ.get("COGEM_VECTOR_CHUNK_CHARS", "2500")
+                                    ),
+                                ),
+                            )
+                        except Exception:
+                            auto_context_block = ""
+
+                    if not auto_context_block:
+                        auto_context_block = auto_repo_context_block_for_task(
+                            task=task_clean,
+                            repo_root=_repo_root(),
+                            config=AutoRepoContextConfig(
+                                enabled=True,
+                                max_chars=auto_repo_max_chars,
+                                max_files=auto_repo_max_files,
+                                max_depth=auto_repo_max_depth,
+                            ),
+                        )
                 except Exception:
                     # Repo awareness should never break builds.
                     auto_context_block = ""
+
+            symbol_dep_context_on = (
+                os.environ.get("COGEM_SYMBOL_DEP_CONTEXT", "1").strip().lower()
+                not in ("0", "false", "no", "off", "disabled")
+            )
+            symbol_dep_context_block = ""
+            if symbol_dep_context_on:
+                try:
+                    symbol_index_enabled = (
+                        os.environ.get("COGEM_SYMBOL_INDEX", "1").strip().lower()
+                        not in ("0", "false", "no", "off", "disabled")
+                    )
+                    if symbol_index_enabled:
+                        from cogem.symbols import SymbolIndex
+
+                        symbol_index_box = {"idx": None}
+
+                        def _extract_mentioned_py_files(raw_task: str) -> List[str]:
+                            files: List[str] = []
+                            for m in _AT_MENTION.finditer(raw_task or ""):
+                                p = m.group(1) or m.group(2) or m.group(3)
+                                if not p:
+                                    continue
+                                abs_p = _resolve_mention_path(p.strip())
+                                if not abs_p:
+                                    continue
+                                roots = _mention_roots_list()
+                                if not _path_allowed_for_mention(abs_p, roots):
+                                    continue
+                                if os.path.isfile(abs_p) and abs_p.lower().endswith(".py"):
+                                    files.append(os.path.realpath(abs_p))
+                            # Deduplicate
+                            out: List[str] = []
+                            seen: Set[str] = set()
+                            for f in files:
+                                if f in seen:
+                                    continue
+                                seen.add(f)
+                                out.append(f)
+                            return out
+
+                        py_files = _extract_mentioned_py_files(task or "")
+                        if py_files:
+                            symbol_index_box["idx"] = SymbolIndex(_repo_root())
+                            symbol_dep_context_block = (
+                                build_symbol_dependency_context_from_py_files(
+                                    repo_root=_repo_root(),
+                                    py_files=py_files,
+                                    symbol_index=symbol_index_box["idx"],
+                                    max_symbols=int(
+                                        os.environ.get(
+                                            "COGEM_SYMBOL_DEP_MAX_SYMBOLS",
+                                            "20",
+                                        )
+                                    ),
+                                    max_chars=int(
+                                        os.environ.get(
+                                            "COGEM_SYMBOL_DEP_MAX_CHARS",
+                                            "4000",
+                                        )
+                                    ),
+                                )
+                            )
+                except Exception:
+                    symbol_dep_context_block = ""
 
             frontend_detected = detect_frontend_task(task_clean)
             stitch_frontend_heavy = detect_stitch_frontend_heavy_task(task_clean)
@@ -3178,7 +3363,7 @@ No markdown, no other text."""
                     "When returning output for a project, use FILE: blocks for all changes.\n"
                 )
             raw, draft_err, draft_rc = run_codex(
-                f"{mem_block}{attach_block}{auto_context_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}"
+                f"{mem_block}{attach_block}{auto_context_block}{symbol_dep_context_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}"
                 f"{tdd_extra_hint}\n\nTASK:\n{task_clean}\n",
                 "Codex: drafting initial implementation...",
             )
@@ -3248,7 +3433,7 @@ No markdown, no other text."""
                         trace_done(
                             "Validation suite failed; feeding failure output to Codex for a second pass."
                         )
-                        section_rule("Review Feedback (validation failures)")
+                        section_rule("Self-Correction feedback (validation failures)")
                         console.print(Text(feedback[:4000], style=LOG_WARN))
                         console.print()
 
@@ -3263,10 +3448,11 @@ No markdown, no other text."""
 TASK:
 {task_clean}
 
-Review Feedback (from automated validation):
+Self-Correction feedback (from automated validation run):
 {feedback}
 
 Fix the project so the test/lint/typecheck commands pass.
+If tests still fail, iterate again (changes must make the validation commands pass).
 Return ONLY FILE: blocks (add/update files as needed).
 """
                         improved_raw, imp_err, imp_rc = run_codex(
@@ -3330,8 +3516,41 @@ Return ONLY FILE: blocks (add/update files as needed).
             trace_doing(
                 "I'm calling Gemini now to critique the draft (risks, style, missing pieces)—independent of Codex's voice."
             )
+            git_ctx_block = ""
+            try:
+                if os.environ.get("COGEM_GIT_CONTEXT", "1").strip().lower() not in (
+                    "0",
+                    "false",
+                    "no",
+                    "off",
+                    "disabled",
+                ):
+                    from cogem.git_context import build_recent_git_log_context
+
+                    abs_files: List[str] = []
+                    for m in _AT_MENTION.finditer(task or ""):
+                        p = m.group(1) or m.group(2) or m.group(3)
+                        if not p:
+                            continue
+                        abs_p = _resolve_mention_path(p.strip())
+                        if not abs_p:
+                            continue
+                        roots = _mention_roots_list()
+                        if not _path_allowed_for_mention(abs_p, roots):
+                            continue
+                        if os.path.isfile(abs_p):
+                            abs_files.append(os.path.realpath(abs_p))
+                    git_ctx_block = build_recent_git_log_context(
+                        _repo_root(),
+                        abs_files,
+                        max_entries_per_file=3,
+                        max_total_chars=6000,
+                    )
+            except Exception:
+                git_ctx_block = ""
             review, gem_rev_err, gem_rev_rc = run_gemini(
-                f"{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{GEMINI_RULES}\n\nCODE:\n{code}",
+                f"{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{GEMINI_RULES}"
+                f"{git_ctx_block}\n\nCODE:\n{code}",
                 "Gemini: writing structured review...",
             )
             if gem_rev_rc != 0:
@@ -3368,8 +3587,7 @@ Return ONLY FILE: blocks (add/update files as needed).
             trace_doing(
                 "I'm calling Codex again with the original code, Gemini's review, and the same generation rules so it can revise in place."
             )
-            improved_raw, imp_err, imp_rc = run_codex(
-                f"""
+            codex_improve_prompt = f"""
 {mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}
 
 You wrote:
@@ -3382,9 +3600,107 @@ Feedback:
 
 Improve the code.
 Return ONLY code.
-""",
-                "Codex: applying Gemini feedback...",
+"""
+            improved_raw = ""
+            imp_err = ""
+            imp_rc = 1
+            stream_diffs = (
+                os.environ.get("COGEM_STREAM_DIFFS", "0").strip().lower()
+                not in ("0", "false", "no", "off", "disabled")
+                and sys.stdout.isatty()
             )
+
+            if stream_diffs:
+                try:
+                    import threading
+                    import time
+                    import subprocess
+                    from rich.live import Live
+
+                    diff_text = Text("[cogem] Streaming diff (v1 vs v2) ...", style=LOG_TRACE)
+
+                    args = _codex_argv(codex_improve_prompt)
+                    proc = subprocess.Popen(
+                        args,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        bufsize=1,
+                    )
+                    stdout_buf: List[str] = []
+                    stderr_buf: List[str] = []
+
+                    def _drain(stream, sink: List[str]) -> None:
+                        try:
+                            for chunk in iter(lambda: stream.readline(), ""):
+                                if not chunk:
+                                    break
+                                sink.append(chunk)
+                        except Exception:
+                            return
+
+                    t_err = threading.Thread(
+                        target=_drain, args=(proc.stderr, stderr_buf), daemon=True
+                    )
+                    t_err.start()
+
+                    def _try_extract_fenced_code(s: str) -> Optional[str]:
+                        m = re.search(r"```(?:\\w+)?\\n([\\s\\S]*?)```", s)
+                        if not m:
+                            return None
+                        return (m.group(1) or "").strip() or None
+
+                    last_code = None
+                    last_render = 0.0
+
+                    with Live(diff_text, console=console, refresh_per_second=4) as live:
+                        while True:
+                            line = ""
+                            if proc.stdout is not None:
+                                line = proc.stdout.readline() or ""
+                            if line:
+                                stdout_buf.append(line)
+                                now = time.monotonic()
+                                if now - last_render >= 1.0:
+                                    raw_now = "".join(stdout_buf)
+                                    cand_code = _try_extract_fenced_code(raw_now)
+                                    if cand_code and cand_code != last_code:
+                                        last_code = cand_code
+                                        diff_output = get_diff(code, cand_code)
+                                        diff_output = diff_output[:4000]
+                                        live.update(Text(diff_output or "", style=LOG_TRACE))
+                                        last_render = now
+
+                            rc = proc.poll()
+                            if rc is not None and not line:
+                                break
+                            if rc is not None and proc.stdout is not None:
+                                # Drain any remaining stdout.
+                                rest = proc.stdout.read() or ""
+                                if rest:
+                                    stdout_buf.append(rest)
+                                break
+
+                    proc.wait(timeout=_subprocess_timeout_sec() or None)
+                    if t_err.is_alive():
+                        t_err.join(timeout=1.0)
+
+                    improved_raw = "".join(stdout_buf)
+                    imp_err = "".join(stderr_buf)
+                    imp_rc = proc.returncode or 1
+                    combined = (improved_raw or "") + "\n" + (imp_err or "")
+                    _record_tokens("codex", combined)
+                except Exception:
+                    # If streaming fails, fall back to the normal non-streaming path.
+                    improved_raw, imp_err, imp_rc = run_codex(
+                        codex_improve_prompt,
+                        "Codex: applying Gemini feedback...",
+                    )
+            else:
+                improved_raw, imp_err, imp_rc = run_codex(
+                    codex_improve_prompt,
+                    "Codex: applying Gemini feedback...",
+                )
             if imp_rc != 0:
                 console.print(
                     Text(

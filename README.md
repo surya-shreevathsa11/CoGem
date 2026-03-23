@@ -467,19 +467,31 @@ There is **no guaranteed public Stitch API** in cogem: integration is **pluggabl
 | `COGEM_CODEX_MODEL` | Default Codex LLM ID when `--codex-model` is not passed |
 | `COGEM_GEMINI_MODEL` | Default Gemini LLM ID when `--gemini-model` is not passed |
 | `COGEM_SUBPROCESS_TIMEOUT_SEC` | Integer seconds; abort a stuck `codex` / `gemini` subprocess after this time |
+| `COGEM_STREAM_DIFFS` | `1`/`0` — stream a live unified diff during Codex improvements (opt-in; only when stdout is a TTY) |
 | `COGEM_VALIDATION_DOCKER` | `yes` / `no` — prefer Docker-based validation backend (tests/lint/typecheck). See `--validation-docker` |
 | `COGEM_STRICT_SANDBOX` | `1` / `0` — when `1`, require Docker for validation; if Docker is missing, cogem skips validation |
 | `COGEM_DOCKER_PY_IMAGE` | Docker image for Python validation (default `python:3.12-slim`) |
 | `COGEM_DOCKER_NODE_IMAGE` | Docker image for Node validation (default `node:20-slim`) |
 | `COGEM_VALIDATION_MAX_ATTEMPTS` | Max automated validation iterations for `/build` (default `2`) |
+| `COGEM_TYPECHECK_PYRIGHT` | `1`/`0` — enable pyright type checking for Python projects (if `pyright` is on PATH). (best-effort; default `1`) |
 | `COGEM_AT_MAX_FILE_BYTES` | Max bytes read per `@` file (default `400000`) |
 | `COGEM_AT_MAX_TOTAL_CHARS` | Max total characters for all `@` attachments in one turn (default `120000`) |
 | `COGEM_AT_MAX_PDF_PAGES` | Max pages extracted from a PDF `@` mention (default `30`) |
 | `COGEM_SYMBOL_INDEX` | `1` (default) / `0` — enable ctags-based symbol resolution for `@MyClassName` mentions (best-effort; requires `universal-ctags`/`ctags` on PATH) |
+| `COGEM_SYMBOL_DEP_CONTEXT` | `1` (default) / `0` — enable symbol-aware dependency injection for BUILD prompts based on `@some_file.py` imports |
+| `COGEM_SYMBOL_DEP_MAX_SYMBOLS` | Max imported symbols to resolve/inject per build turn (default `20`) |
+| `COGEM_SYMBOL_DEP_MAX_CHARS` | Cap for the injected dependency context text (default `4000`) |
+| `COGEM_SYMBOL_COMPLETIONS` | `1`/`0` — include `@MySymbol` completions in the `@` menu (best-effort; requires ctags/universal-ctags for real tags) |
+| `COGEM_FUZZY_AT_COMPLETIONS` | `1`/`0` — enable fuzzy fallback for `@` path completion when prefix matches return nothing |
+| `COGEM_FUZZY_SYMBOL_COMPLETIONS` | `1`/`0` — enable fuzzy fallback for `@` symbol completion when prefix matches return nothing |
 | `COGEM_AUTO_REPO_CONTEXT` | `1`/`0` — auto-retrieve relevant repo snippets for BUILD prompts (keyword + dependency graph) |
 | `COGEM_AUTO_REPO_CONTEXT_MAX_CHARS` | Cap for injected auto repo context text (default `8000`) |
 | `COGEM_AUTO_REPO_CONTEXT_MAX_FILES` | Max files to inject (default `6`) |
 | `COGEM_AUTO_REPO_CONTEXT_MAX_DEPTH` | Dependency expansion depth (default `2`) |
+| `COGEM_VECTOR_RAG` | `1`/`0` — enable LanceDB semantic retrieval for BUILD prompts (best-effort; requires extra deps) |
+| `COGEM_VECTOR_REBUILD` | `1`/`0` — rebuild the local vector index (default `0`) |
+| `COGEM_VECTOR_TOP_K` | Number of semantic matches to inject (default `8`) |
+| `COGEM_VECTOR_CHUNK_CHARS` | Chunk size for embedding (default `2500`) |
 | `COGEM_STITCH` | `1` (default) / `0` — enable or disable the Stitch stage for UI-heavy tasks |
 | `COGEM_STITCH_CLI` | Optional: executable for a Stitch adapter (stdin sends the prompt unless `COGEM_STITCH_CLI_STDIN=0` + temp file) |
 | `COGEM_STITCH_CLI_ARGS` | Extra argv appended after the CLI command |

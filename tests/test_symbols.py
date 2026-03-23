@@ -132,3 +132,18 @@ def test_resolve_symbol_prefers_source_over_header(tmp_path: Path):
     assert "source implementation" in res.snippet or "run() { return 7; }" in res.snippet
     assert res.tag.path.endswith("thing.cpp")
 
+
+def test_symbols_fuzzy_search_finds_out_of_order_letters():
+    repo = "unused"
+    idx = SymbolIndex(
+        repo,
+        tag_records=[
+            TagMatch(name="StitchCliAdapter", path="x.py", line=1, kind="class"),
+            TagMatch(name="Unrelated", path="y.py", line=1, kind="class"),
+        ],
+    )
+
+    matches = idx.symbols_fuzzy_search("SCA", limit=5)
+    assert matches
+    assert matches[0].name == "StitchCliAdapter"
+
