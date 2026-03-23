@@ -73,8 +73,21 @@ def _boot_run_step(
 
 def boot_sequence() -> bool:
     """TTY-style boot, real codex/gemini checks. Returns False if deps missing."""
+    import os
     import shutil
+    import shlex
     import sys
+
+    def _cmd_exists(raw: str, default_cmd: str) -> bool:
+        txt = (raw or "").strip() or default_cmd
+        try:
+            parts = shlex.split(txt, posix=os.name != "nt")
+        except Exception:
+            parts = txt.split()
+        if not parts:
+            parts = [default_cmd]
+        exe = parts[0]
+        return bool(shutil.which(exe) or os.path.isfile(exe))
 
     sys.stdout.write("\n")
     sys.stdout.flush()
@@ -99,7 +112,7 @@ def boot_sequence() -> bool:
 
     if not _boot_run_step(
         "loading codex",
-        lambda: shutil.which("codex") is not None,
+        lambda: _cmd_exists(os.environ.get("COGEM_CODEX_CMD", ""), "codex"),
         min_spin=0.35,
     ):
         sys.stdout.write("\n")
@@ -115,7 +128,7 @@ def boot_sequence() -> bool:
 
     if not _boot_run_step(
         "loading gemini",
-        lambda: shutil.which("gemini") is not None,
+        lambda: _cmd_exists(os.environ.get("COGEM_GEMINI_CMD", ""), "gemini"),
         min_spin=0.35,
     ):
         sys.stdout.write("\n")
@@ -151,7 +164,7 @@ def main():
     import urllib.error
     from pathlib import Path
     from datetime import datetime, timezone
-    from typing import List, Optional, Set, Tuple
+    from typing import Dict, List, Optional, Set, Tuple
 
     import threading
 
@@ -190,6 +203,8 @@ def main():
         auto_repo_context_block_for_task,
     )
     from cogem.graph import build_symbol_dependency_context_from_py_files
+    from cogem.write_safety import plan_safe_writes
+    from cogem.command_policy import ALLOWED_EXECUTABLES, validate_local_command_args
 
     _ap = argparse.ArgumentParser(
         prog="cogem",
@@ -1061,28 +1076,7 @@ def main():
             pass
         return os.getcwd()
 
-    _RUN_ALLOW_EXECUTABLES = {
-        "git",
-        "python",
-        "python3",
-        "pytest",
-        "ruff",
-        "flake8",
-        "black",
-        "mypy",
-        "node",
-        "npm",
-        "npx",
-        "pyright",
-        "yarn",
-        "pnpm",
-        "go",
-        "golangci-lint",
-        "cargo",
-        "make",
-        "bash",
-        "sh",
-    }
+    _RUN_ALLOW_EXECUTABLES = set(ALLOWED_EXECUTABLES)
 
     def _run_local_command(cmd_raw: str, label: str) -> Tuple[int, str, str]:
         ensure_run_permissions()
@@ -1096,11 +1090,9 @@ def main():
         args = _shlex_split_cmd(cmd_raw.strip())
         if not args:
             return 1, "", "Empty command."
-        exe = args[0]
-        exe_name = os.path.basename(exe)
-        if exe_name not in _RUN_ALLOW_EXECUTABLES:
-            allow = ", ".join(sorted(_RUN_ALLOW_EXECUTABLES))
-            return 1, "", f"Executable not allowed: {exe_name}. Allowed: {allow}"
+        ok, reason = validate_local_command_args(args, label)
+        if not ok:
+            return 1, "", reason
 
         proc = _run_proc(args, cwd=_repo_root())
         return proc.returncode, proc.stdout or "", proc.stderr or ""
@@ -1119,10 +1111,25 @@ def main():
         return os.path.isdir(os.path.join(_repo_root(), rel_path))
 
     def _detect_repo_kind() -> str:
+        # Node-like
         if _repo_has("package.json"):
-            return "node"
+            if _repo_has("pnpm-lock.yaml"):
+                return "node-pnpm"
+            if _repo_has("yarn.lock"):
+                return "node-yarn"
+            return "node-npm"
+        # Python-like
         if _repo_has("pyproject.toml") or _repo_has("requirements.txt") or _repo_has("setup.cfg"):
+            if _repo_has("poetry.lock"):
+                return "python-poetry"
+            if _repo_has("pdm.lock"):
+                return "python-pdm"
             return "python"
+        # Go / Rust
+        if _repo_has("go.mod"):
+            return "go"
+        if _repo_has("Cargo.toml"):
+            return "rust"
         return "unknown"
 
     def _select_node_script(package_json: dict, key: str) -> Optional[str]:
@@ -1136,24 +1143,60 @@ def main():
 
     def _select_test_cmd() -> Optional[str]:
         kind = _detect_repo_kind()
-        if kind == "node":
+        if kind in ("node-npm", "node-pnpm", "node-yarn"):
             pj = _read_json_file(os.path.join(_repo_root(), "package.json")) or {}
             if _select_node_script(pj, "test"):
+                if kind == "node-pnpm":
+                    return "pnpm run test"
+                if kind == "node-yarn":
+                    return "yarn test"
                 return "npm run test"
+            if kind == "node-pnpm":
+                return "pnpm test"
+            if kind == "node-yarn":
+                return "yarn test"
             return "npm test"
+        if kind == "python-poetry":
+            return "poetry run pytest"
+        if kind == "python-pdm":
+            return "pdm run pytest"
         if kind == "python":
             # Best-effort: use python -m pytest so it works even without a global pytest script.
             return "python -m pytest"
+        if kind == "go":
+            return "go test ./..."
+        if kind == "rust":
+            return "cargo test"
         return None
 
     def _select_lint_cmd() -> Optional[str]:
         kind = _detect_repo_kind()
-        if kind == "node":
+        if kind in ("node-npm", "node-pnpm", "node-yarn"):
             pj = _read_json_file(os.path.join(_repo_root(), "package.json")) or {}
             if _select_node_script(pj, "lint"):
+                if kind == "node-pnpm":
+                    return "pnpm run lint"
+                if kind == "node-yarn":
+                    return "yarn lint"
                 return "npm run lint"
             if _select_node_script(pj, "eslint"):
+                if kind == "node-pnpm":
+                    return "pnpm run eslint"
+                if kind == "node-yarn":
+                    return "yarn eslint"
                 return "npm run eslint"
+            return None
+        if kind == "python-poetry":
+            if shutil.which("ruff"):
+                return "poetry run ruff check ."
+            if shutil.which("flake8"):
+                return "poetry run flake8 ."
+            return None
+        if kind == "python-pdm":
+            if shutil.which("ruff"):
+                return "pdm run ruff check ."
+            if shutil.which("flake8"):
+                return "pdm run flake8 ."
             return None
         if kind == "python":
             # Choose ruff first if available.
@@ -1162,13 +1205,19 @@ def main():
             if shutil.which("flake8"):
                 return "python -m flake8 ."
             return None
+        if kind == "go":
+            if shutil.which("golangci-lint"):
+                return "golangci-lint run"
+            return None
+        if kind == "rust":
+            return "cargo clippy -- -D warnings"
         return None
 
     def _select_typecheck_cmd() -> Optional[str]:
         """Best-effort: run TypeScript typecheck when tsconfig exists."""
         kind = _detect_repo_kind()
-        if kind != "node":
-            if kind == "python":
+        if kind not in ("node-npm", "node-pnpm", "node-yarn"):
+            if kind in ("python", "python-poetry", "python-pdm"):
                 typecheck_pyright_on = (
                     os.environ.get("COGEM_TYPECHECK_PYRIGHT", "1").strip().lower()
                     not in ("0", "false", "no", "off", "disabled")
@@ -1178,10 +1227,23 @@ def main():
                 # Best-effort Pyright type checking for Python projects.
                 if shutil.which("pyright"):
                     # Uses pyright's config discovery when a pyrightconfig.json exists.
+                    if kind == "python-poetry":
+                        return "poetry run pyright --verifytypes ."
+                    if kind == "python-pdm":
+                        return "pdm run pyright --verifytypes ."
                     return "pyright --verifytypes ."
                 return None
+            if kind == "go":
+                # Best-effort static/type-ish check for Go.
+                return "go test ./..."
+            if kind == "rust":
+                return "cargo check"
             return None
         if _repo_has("tsconfig.json"):
+            if kind == "node-pnpm":
+                return "pnpm exec tsc --noEmit"
+            if kind == "node-yarn":
+                return "yarn tsc --noEmit"
             return "npx tsc --noEmit"
         return None
 
@@ -1203,10 +1265,9 @@ def main():
         args = _shlex_split_cmd(cmd_raw.strip())
         if not args:
             return 1, "", "Empty command."
-        exe_name = os.path.basename(args[0])
-        if exe_name not in _RUN_ALLOW_EXECUTABLES:
-            allow = ", ".join(sorted(_RUN_ALLOW_EXECUTABLES))
-            return 1, "", f"Executable not allowed: {exe_name}. Allowed: {allow}"
+        ok, reason = validate_local_command_args(args, label)
+        if not ok:
+            return 1, "", reason
 
         proc = _run_proc(args, cwd=cwd)
         return proc.returncode, proc.stdout or "", proc.stderr or ""
@@ -1313,7 +1374,7 @@ def main():
         except OSError as e:
             return 1, "", f"docker command failed: {e}"
 
-    def _docker_validate_cmd_tokens(cmd_raw: str) -> Optional[List[str]]:
+    def _docker_validate_cmd_tokens(cmd_raw: str, label: str) -> Optional[List[str]]:
         """
         Enforce the same safety rules as local execution:
         - no shell operators
@@ -1324,8 +1385,8 @@ def main():
         args = _shlex_split_cmd(cmd_raw.strip())
         if not args:
             return None
-        exe_name = os.path.basename(args[0])
-        if exe_name not in _RUN_ALLOW_EXECUTABLES:
+        ok, _reason = validate_local_command_args(args, label)
+        if not ok:
             return None
         return args
 
@@ -1406,7 +1467,7 @@ def main():
             ):
                 if not cmd:
                     continue
-                tokens = _docker_validate_cmd_tokens(cmd)
+                tokens = _docker_validate_cmd_tokens(cmd, label)
                 if not tokens:
                     ok = False
                     combined_parts.append(
@@ -1504,7 +1565,8 @@ def main():
 
     def _codex_argv(prompt: str) -> List[str]:
         """codex exec with flags that avoid failing outside a git repo / trusted tree."""
-        argv = ["codex", "exec", "--skip-git-repo-check"]
+        base = _shlex_split_cmd(os.environ.get("COGEM_CODEX_CMD", "").strip()) or ["codex"]
+        argv = base + ["exec", "--skip-git-repo-check"]
         if auto_permissions.get("granted"):
             argv.append("--full-auto")
         wd = os.environ.get("COGEM_CODEX_WORKDIR", "").strip()
@@ -1517,7 +1579,8 @@ def main():
         return argv
 
     def _gemini_argv(prompt: str) -> List[str]:
-        argv = ["gemini"]
+        base = _shlex_split_cmd(os.environ.get("COGEM_GEMINI_CMD", "").strip()) or ["gemini"]
+        argv = list(base)
         if auto_permissions.get("granted"):
             argv.append("--yolo")
         gm = models.get("gemini")
@@ -1769,6 +1832,7 @@ __TASK__
         ("/debug", "Debugging & root-cause focus for this turn"),
         ("/agent", "Autonomous multi-step coding within your scope"),
         ("/ask", "Chat only — no Codex/Gemini build loop this turn"),
+        ("/exit", "Exit cogem"),
         ("/pdf", "Generate a PDF from provided text (plain text layout)"),
         ("/codex/model", "Show or set Codex LLM (draft + improve)"),
         ("/gemini/model", "Show or set Gemini LLM (review + summary)"),
@@ -2418,11 +2482,85 @@ No markdown, no other text."""
         matches = re.findall(pattern, text)
         return {name.strip(): content.strip() for name, content in matches}
 
-    def write_files(files):
-        for name, content in files.items():
-            with open(name, "w") as f:
+    def write_files(files) -> Dict[str, str]:
+        """
+        Safe writer for model FILE: outputs.
+        Returns {written_relative_path: content}.
+        """
+        repo_root = _repo_root()
+        plan = plan_safe_writes(repo_root=repo_root, file_map=files)
+
+        dry_run = (
+            os.environ.get("COGEM_WRITE_DRY_RUN", "").strip().lower()
+            in ("1", "true", "yes", "on")
+        )
+        approval_required = (
+            os.environ.get("COGEM_WRITE_APPROVAL", "").strip().lower()
+            in ("1", "true", "yes", "on")
+        )
+
+        allowed = [p for p in plan if p.allowed]
+        blocked = [p for p in plan if not p.allowed]
+        for b in blocked:
+            console.print(
+                Text(
+                    f"[cogem] Blocked model write '{b.original_name}': {b.reason}",
+                    style=LOG_WARN,
+                )
+            )
+
+        if not allowed:
+            return {}
+
+        if dry_run:
+            console.print(Text("[cogem] Dry-run mode: no files were written.", style=LOG_WARN))
+            for p in allowed:
+                try:
+                    rel = os.path.relpath(p.target_path, repo_root)
+                except ValueError:
+                    rel = p.target_path
+                _say(f"  [dry-run] {rel}")
+            return {}
+
+        if approval_required:
+            if not sys.stdin.isatty():
+                console.print(
+                    Text(
+                        "[cogem] Non-interactive session + COGEM_WRITE_APPROVAL=1: skipping writes.",
+                        style=LOG_WARN,
+                    )
+                )
+                return {}
+            console.print()
+            section_rule("Write approval")
+            console.print(Text(f"About to write {len(allowed)} file(s) under repo root:", style=MUTED))
+            for p in allowed[:30]:
+                try:
+                    rel = os.path.relpath(p.target_path, repo_root)
+                except ValueError:
+                    rel = p.target_path
+                console.print(Text(f" - {rel}", style=MUTED))
+            if len(allowed) > 30:
+                console.print(Text(f" ... and {len(allowed) - 30} more", style=MUTED))
+            ans = console.input(Text("Proceed with writes? [y/N]: ", style=TITLE)).strip().lower()
+            if ans not in ("y", "yes"):
+                console.print(Text("[cogem] Write approval denied; skipping writes.", style=LOG_WARN))
+                return {}
+
+        written: Dict[str, str] = {}
+        for p in allowed:
+            content = files.get(p.original_name, "")
+            parent = os.path.dirname(p.target_path) or repo_root
+            os.makedirs(parent, exist_ok=True)
+            with open(p.target_path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(content)
-            _say(f"  [ok] wrote {name}")
+            try:
+                rel = os.path.relpath(p.target_path, repo_root)
+            except ValueError:
+                rel = p.target_path
+            written[rel.replace("\\", "/")] = content
+            _say(f"  [ok] wrote {rel}")
+        return written
 
     def _pick_entry(paths: List[str], preferred_basenames: List[str]) -> str:
         for pref in preferred_basenames:
@@ -2586,6 +2724,11 @@ No markdown, no other text."""
                     )
                 )
                 continue
+
+            if task.strip().lower() in ("/exit", "/quit"):
+                console.print()
+                console.print(Text("Goodbye.", style=TITLE))
+                break
 
             if task.startswith("/codex/model"):
                 rest = task[len("/codex/model"):].strip()
@@ -3400,9 +3543,17 @@ No markdown, no other text."""
                 )
                 section_heading("PROJECT MODE")
                 console.print()
-                write_files(files)
+                written_files = write_files(files)
                 console.print()
-                run_written_artifacts(files)
+                if written_files:
+                    run_written_artifacts(written_files)
+                else:
+                    console.print(
+                        Text(
+                            "[cogem] No files written (all blocked, dry-run, or approval denied).",
+                            style=LOG_WARN,
+                        )
+                    )
                 console.print()
 
                 # ---------- validation loop (close the loop) ----------
@@ -3480,9 +3631,17 @@ Return ONLY FILE: blocks (add/update files as needed).
                         trace_doing(
                             f"Writing {len(improved_files)} file(s) from Codex validation-fix pass ..."
                         )
-                        write_files(improved_files)
+                        written_fix_files = write_files(improved_files)
                         console.print()
-                        run_written_artifacts(improved_files)
+                        if written_fix_files:
+                            run_written_artifacts(written_fix_files)
+                        else:
+                            console.print(
+                                Text(
+                                    "[cogem] No files written from validation-fix pass.",
+                                    style=LOG_WARN,
+                                )
+                            )
                         console.print()
 
                         attempt += 1
