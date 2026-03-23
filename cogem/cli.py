@@ -1242,6 +1242,11 @@ Saved context:
 __MEMORY__
 ---
 
+Runtime capabilities (this session; use only what is shown):
+---
+__CAPS__
+---
+
 Answer the user in plain text. Do not use markdown code fences unless they explicitly asked for code.
 Be concise. If they only need a short definition or opinion, keep it short.
 
@@ -1309,6 +1314,34 @@ __TASK__
             f"- Stitch MCP adapter: {mcp_line}\n"
             f"- Stitch HTTP adapter: {http_line}\n"
             "- Stitch manual fallback: always available (export/paste)\n"
+        )
+
+    def runtime_cogem_commands_capabilities_block() -> str:
+        """
+        Helps chat/router explain what features exist and how to access them,
+        without guessing extra tools.
+        """
+        allow_local = os.environ.get("COGEM_ALLOW_LOCAL_COMMANDS", "").strip()
+        allow_local_hint = (
+            "auto-granted"
+            if allow_local
+            else "requires an interactive permission prompt"
+        )
+        return (
+            "\n\n## Known in-session commands\n"
+            "- `/plan`: planning emphasis (steps/milestones). Prefer structured guidance.\n"
+            "- `/debug`: targeted debugging (root cause and verification).\n"
+            "- `/agent`: autonomous multi-step coding within scope.\n"
+            "- `/build`: force the full build pipeline this turn.\n"
+            "- `/ask`: chat-only; no build pipeline this turn.\n"
+            "- `/repo/info`: show repo info (git status/branch/last commit).\n"
+            "- `/test`: run detected tests (best-effort).\n"
+            "- `/lint`: run detected lint (best-effort).\n"
+            "- `/run <cmd>`: run a local command with sandboxed allowlist; may require permission.\n"
+            "- `/github/info <url|owner/repo>`: fetch public GitHub repo metadata.\n"
+            "- `/github/clone <url|owner/repo> [dest]`: clone a GitHub repo into current dir.\n"
+            "\nLocal command execution note: `/run`, `/test`, `/lint` use a permission gate "
+            f"({allow_local_hint})."
         )
 
     _SESSION_DIRECTIVE = re.compile(
@@ -2302,9 +2335,13 @@ No markdown, no other text."""
                 mem_ctx = mem_block.strip() if mem_block.strip() else "(none yet)"
                 ask_task_body = (attach_block or "") + (task_clean or "(no message)")
                 ask_raw, ask_err, ask_rc = run_codex(
-                    ASK_MODE_PROMPT.replace("__MEMORY__", mem_ctx).replace(
-                        "__TASK__", ask_task_body
-                    ),
+                    ASK_MODE_PROMPT.replace("__MEMORY__", mem_ctx)
+                    .replace(
+                        "__CAPS__",
+                        runtime_stitch_capabilities_block()
+                        + runtime_cogem_commands_capabilities_block(),
+                    )
+                    .replace("__TASK__", ask_task_body),
                     "Codex: /ask reply...",
                 )
                 if ask_rc != 0:
@@ -2363,7 +2400,9 @@ No markdown, no other text."""
                 router_raw, router_err, router_rc = run_codex(
                     build_router_prompt(
                         task_clean,
-                        mem_block + runtime_stitch_capabilities_block(),
+                        mem_block
+                        + runtime_stitch_capabilities_block()
+                        + runtime_cogem_commands_capabilities_block(),
                         router_hint,
                     ),
                     "Codex: routing (build vs conversation)...",
