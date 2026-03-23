@@ -361,6 +361,7 @@ While Cogem is running, you can change models without restarting:
 | `/test` | Run project tests (best-effort; Python or Node) |
 | `/lint` | Run project lint (best-effort; Python or Node) |
 | `/run <cmd>` | Run a local command (requires permission; allowlist enforced) |
+| `/pdf` | Generate a PDF from provided text (plain-text layout; uses `reportlab`) |
 | `/github/info <url or owner/repo>` | Show public GitHub repository metadata (description, stars, language, branch) |
 | `/github/clone <url or owner/repo> [dest]` | Clone repository into local folder (`dest` optional) |
 

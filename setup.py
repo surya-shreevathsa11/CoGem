@@ -8,6 +8,7 @@ setup(
         "rich>=10.0.0",
         "prompt_toolkit>=3.0.0",
         "pypdf>=5.0.0",
+        "reportlab>=4.0.0",
     ],
     entry_points={
         "console_scripts": [

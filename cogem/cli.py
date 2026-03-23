@@ -1334,6 +1334,7 @@ __TASK__
             "- `/agent`: autonomous multi-step coding within scope.\n"
             "- `/build`: force the full build pipeline this turn.\n"
             "- `/ask`: chat-only; no build pipeline this turn.\n"
+            "- `/pdf`: generate a PDF from provided text (plain text layout; requires `reportlab`).\n"
             "- `/repo/info`: show repo info (git status/branch/last commit).\n"
             "- `/test`: run detected tests (best-effort).\n"
             "- `/lint`: run detected lint (best-effort).\n"
@@ -1366,6 +1367,7 @@ __TASK__
         ("/debug", "Debugging & root-cause focus for this turn"),
         ("/agent", "Autonomous multi-step coding within your scope"),
         ("/ask", "Chat only — no Codex/Gemini build loop this turn"),
+        ("/pdf", "Generate a PDF from provided text (plain text layout)"),
         ("/codex/model", "Show or set Codex LLM (draft + improve)"),
         ("/gemini/model", "Show or set Gemini LLM (review + summary)"),
         ("/repo/info", "Show repo info (git status, branch, last commit)"),
@@ -2236,6 +2238,94 @@ No markdown, no other text."""
                     console.print(out.strip())
                 if rc != 0 and (err or "").strip():
                     console.print(Text(err.strip()[:2000], style=LOG_WARN))
+                continue
+
+            if task.startswith("/pdf"):
+                rest = task[len("/pdf") :].strip()
+                if not rest:
+                    console.print(
+                        Text(
+                            "Usage: /pdf <text> [out.pdf]  OR  /pdf @path/to/file.txt [out.pdf]",
+                            style=MUTED,
+                        )
+                    )
+                    console.print()
+                    continue
+
+                tokens = _shlex_split_cmd(rest)
+                if not tokens:
+                    console.print(Text("Usage: /pdf <text> [out.pdf]", style=MUTED))
+                    console.print()
+                    continue
+
+                desired_out = None
+                if len(tokens) >= 2 and tokens[-1].lower().endswith(".pdf"):
+                    desired_out = tokens[-1]
+                    content_tokens = tokens[:-1]
+                else:
+                    content_tokens = tokens
+
+                body = ""
+                if (
+                    len(content_tokens) == 1
+                    and content_tokens[0].startswith("@")
+                    and not content_tokens[0].startswith("@@")
+                ):
+                    rel = content_tokens[0][1:]
+                    roots = _mention_roots_list()
+                    abs_p = _resolve_mention_path(rel)
+                    if not abs_p or not _path_allowed_for_mention(abs_p, roots):
+                        console.print(
+                            Text(f"Could not read @ mention: {content_tokens[0]}", style=LOG_WARN)
+                        )
+                        console.print()
+                        continue
+                    try:
+                        max_b = max(
+                            4096, int(os.environ.get("COGEM_AT_MAX_FILE_BYTES", "400000"))
+                        )
+                    except ValueError:
+                        max_b = 400000
+                    body = _read_file_for_mention(abs_p, max_b)
+                else:
+                    body = " ".join(content_tokens).strip()
+
+                if not body:
+                    console.print(Text("No PDF content provided.", style=LOG_WARN))
+                    console.print()
+                    continue
+
+                from cogem.pdf_tools import generate_pdf_from_text, pdf_path_for_text_request
+
+                final_path, display_name = pdf_path_for_text_request(os.getcwd(), desired_out)
+
+                # Safety: only allow writes within mention roots.
+                roots = _mention_roots_list()
+                final_abs = os.path.realpath(final_path)
+                if not any(
+                    final_abs == os.path.realpath(r) or final_abs.startswith(os.path.realpath(r) + os.sep)
+                    for r in roots
+                ):
+                    console.print(
+                        Text("Refusing to write PDF outside the allowed workspace.", style=LOG_WARN)
+                    )
+                    console.print()
+                    continue
+
+                try:
+                    generate_pdf_from_text(body, final_path)
+                except Exception as e:
+                    console.print(Text(f"PDF generation failed: {e}", style=LOG_ERR))
+                    console.print()
+                    continue
+
+                console.print()
+                section_rule("PDF generated")
+                console.print(Text(f"Wrote: {display_name}", style=LOG_OK))
+                console.print(
+                    Text("Generated PDFs are plain-text layout PDFs.", style=MUTED)
+                )
+                console.print()
                 continue
 
             if task.startswith("/run"):
