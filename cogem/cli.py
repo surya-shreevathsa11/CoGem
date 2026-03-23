@@ -146,6 +146,9 @@ def main():
     import time
     import webbrowser
     import shutil
+    import urllib.parse
+    import urllib.request
+    import urllib.error
     from pathlib import Path
     from datetime import datetime, timezone
     from typing import List, Optional, Tuple
@@ -401,7 +404,52 @@ def main():
                 continue
         return None
 
+    def _read_pdf_for_mention(path: str, max_chars: int) -> str:
+        """Best-effort PDF text extraction for @ mentions."""
+        try:
+            from pypdf import PdfReader  # type: ignore
+        except Exception:
+            return "[pdf extraction unavailable: install pypdf]"
+
+        try:
+            max_pages = max(1, int(os.environ.get("COGEM_AT_MAX_PDF_PAGES", "30")))
+        except ValueError:
+            max_pages = 30
+
+        try:
+            reader = PdfReader(path)
+        except Exception as e:
+            return f"[pdf read error: {e}]"
+
+        total_pages = len(reader.pages)
+        show_pages = min(total_pages, max_pages)
+        out_parts: List[str] = []
+        total = 0
+        for i in range(show_pages):
+            try:
+                text = (reader.pages[i].extract_text() or "").strip()
+            except Exception:
+                text = ""
+            if not text:
+                text = f"[page {i + 1}: no extractable text]"
+            block = f"\n\n--- PAGE {i + 1} ---\n{text}"
+            if total + len(block) > max_chars:
+                out_parts.append("\n\n[pdf text truncated by COGEM_AT_MAX_FILE_BYTES]")
+                break
+            out_parts.append(block)
+            total += len(block)
+        if total_pages > show_pages:
+            out_parts.append(
+                f"\n\n[pdf pages truncated: showing {show_pages}/{total_pages}; "
+                f"set COGEM_AT_MAX_PDF_PAGES to increase]"
+            )
+        if not out_parts:
+            return "[pdf contains no extractable text]"
+        return "".join(out_parts).strip()
+
     def _read_file_for_mention(path: str, max_bytes: int) -> str:
+        if path.lower().endswith(".pdf"):
+            return _read_pdf_for_mention(path, max_bytes)
         try:
             with open(path, "rb") as f:
                 raw = f.read(max_bytes + 1)
@@ -516,23 +564,127 @@ def main():
         """Local wall time only (no UTC-style suffix — avoids confusion on Windows)."""
         return time.strftime("%H:%M:%S", time.localtime())
 
-    _TOKEN_PATTERNS = (
+    def _parse_github_repo_ref(raw: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        """
+        Parse GitHub ref (URL or owner/repo) -> (owner, repo, clone_url).
+        """
+        s = (raw or "").strip()
+        if not s:
+            return None, None, None
+        if "github.com/" in s:
+            try:
+                p = urllib.parse.urlparse(s)
+                parts = [x for x in p.path.strip("/").split("/") if x]
+                if len(parts) < 2:
+                    return None, None, None
+                owner, repo = parts[0], parts[1]
+                if repo.endswith(".git"):
+                    repo = repo[:-4]
+                if owner and repo:
+                    return owner, repo, f"https://github.com/{owner}/{repo}.git"
+                return None, None, None
+            except Exception:
+                return None, None, None
+        if "/" in s and " " not in s:
+            owner, repo = s.split("/", 1)
+            if repo.endswith(".git"):
+                repo = repo[:-4]
+            if owner and repo:
+                return owner, repo, f"https://github.com/{owner}/{repo}.git"
+        return None, None, None
+
+    def _github_repo_info(owner: str, repo: str) -> str:
+        url = f"https://api.github.com/repos/{owner}/{repo}"
+        req = urllib.request.Request(
+            url,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "cogem-cli"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+            data = json.loads(raw)
+        except urllib.error.HTTPError as e:
+            return f"GitHub API error: HTTP {e.code} ({e.reason})"
+        except Exception as e:
+            return f"GitHub API error: {e}"
+        if not isinstance(data, dict):
+            return "GitHub API returned unexpected response."
+
+        desc = (data.get("description") or "").strip() or "(no description)"
+        stars = data.get("stargazers_count", 0)
+        forks = data.get("forks_count", 0)
+        lang = data.get("language") or "unknown"
+        lic = data.get("license")
+        lic_name = (lic.get("spdx_id") if isinstance(lic, dict) else None) or "unknown"
+        branch = data.get("default_branch") or "main"
+        return (
+            f"{owner}/{repo}\n"
+            f"- Description: {desc}\n"
+            f"- Stars: {stars}   Forks: {forks}\n"
+            f"- Language: {lang}   License: {lic_name}\n"
+            f"- Default branch: {branch}\n"
+            f"- Clone URL: https://github.com/{owner}/{repo}.git"
+        )
+
+    _TOKEN_TOTAL_PATTERNS = (
         re.compile(r"tokens?\s+used[:\s]+([\d,]+)", re.I),
         re.compile(r"total\s+tokens?[:\s]+([\d,]+)", re.I),
         re.compile(r"(?:^|\s)([\d,]+)\s+tokens?\s+used", re.I),
+        re.compile(r"total[_\s-]*token[_\s-]*count[:=\s]+([\d,]+)", re.I),
+        re.compile(r'"totalTokenCount"\s*:\s*([\d,]+)', re.I),
+        re.compile(r'"tokenCount"\s*:\s*([\d,]+)', re.I),
+        re.compile(r"\busage\b[^\n\r]*\btotal\b[^\d]{0,16}([\d,]+)", re.I),
+    )
+    _TOKEN_IN_PATTERNS = (
+        re.compile(r"input\s+tokens?[:=\s]+([\d,]+)", re.I),
+        re.compile(r"prompt\s+tokens?[:=\s]+([\d,]+)", re.I),
+        re.compile(r'"inputTokenCount"\s*:\s*([\d,]+)', re.I),
+        re.compile(r'"promptTokenCount"\s*:\s*([\d,]+)', re.I),
+    )
+    _TOKEN_OUT_PATTERNS = (
+        re.compile(r"output\s+tokens?[:=\s]+([\d,]+)", re.I),
+        re.compile(r"completion\s+tokens?[:=\s]+([\d,]+)", re.I),
+        re.compile(r'"outputTokenCount"\s*:\s*([\d,]+)', re.I),
+        re.compile(r'"candidatesTokenCount"\s*:\s*([\d,]+)', re.I),
+        re.compile(r'"completionTokenCount"\s*:\s*([\d,]+)', re.I),
     )
 
     def _extract_tokens_from_text(text: str) -> Optional[int]:
-        """Return a single token count if the CLI printed something recognizable."""
+        """Best-effort token extraction across Codex/Gemini output formats."""
         if not text or not text.strip():
             return None
-        for pat in _TOKEN_PATTERNS:
+        for pat in _TOKEN_TOTAL_PATTERNS:
             m = pat.search(text)
             if m:
                 try:
                     return int(m.group(1).replace(",", ""))
                 except ValueError:
                     continue
+
+        in_count = None
+        out_count = None
+        for pat in _TOKEN_IN_PATTERNS:
+            m = pat.search(text)
+            if m:
+                try:
+                    in_count = int(m.group(1).replace(",", ""))
+                    break
+                except ValueError:
+                    continue
+        for pat in _TOKEN_OUT_PATTERNS:
+            m = pat.search(text)
+            if m:
+                try:
+                    out_count = int(m.group(1).replace(",", ""))
+                    break
+                except ValueError:
+                    continue
+        if in_count is not None and out_count is not None:
+            return in_count + out_count
+        if in_count is not None:
+            return in_count
+        if out_count is not None:
+            return out_count
         return None
 
     def _record_tokens(provider: str, text: str) -> None:
@@ -969,6 +1121,8 @@ __TASK__
         ("/ask", "Chat only — no Codex/Gemini build loop this turn"),
         ("/codex/model", "Show or set Codex LLM (draft + improve)"),
         ("/gemini/model", "Show or set Gemini LLM (review + summary)"),
+        ("/github/info", "Inspect public GitHub repository details"),
+        ("/github/clone", "Clone a GitHub repo into current directory"),
     )
     _MAX_AT_COMPLETIONS = 500
 
@@ -1607,6 +1761,8 @@ No markdown, no other text."""
                         "Session: /build /plan /debug /agent /ask   "
                         "/codex/model <MODEL_ID|reset>   "
                         "/gemini/model <MODEL_ID|reset>   "
+                        "/github/info <url|owner/repo>   "
+                        "/github/clone <url|owner/repo> [dest]   "
                         "@path @folder   (Tab completes / and @)",
                         style=MUTED,
                     )
@@ -1717,6 +1873,59 @@ No markdown, no other text."""
                     continue
                 models["gemini"] = rest
                 console.print(Text(f"Gemini LLM set to: {rest}", style=TITLE))
+                continue
+
+            if task.startswith("/github/info"):
+                rest = task[len("/github/info"):].strip()
+                if not rest:
+                    console.print(
+                        Text("Usage: /github/info <https://github.com/owner/repo or owner/repo>", style=MUTED)
+                    )
+                    continue
+                owner, repo, _clone_url = _parse_github_repo_ref(rest)
+                if not owner or not repo:
+                    console.print(Text("Could not parse GitHub repository reference.", style=LOG_WARN))
+                    continue
+                console.print()
+                info = _github_repo_info(owner, repo)
+                section_rule("GitHub repository info")
+                console.print()
+                console.print(info)
+                console.print()
+                continue
+
+            if task.startswith("/github/clone"):
+                rest = task[len("/github/clone"):].strip()
+                if not rest:
+                    console.print(
+                        Text("Usage: /github/clone <https://github.com/owner/repo or owner/repo> [dest]", style=MUTED)
+                    )
+                    continue
+                parts = rest.split()
+                ref = parts[0].strip()
+                dest = parts[1].strip() if len(parts) > 1 else ""
+                owner, repo, clone_url = _parse_github_repo_ref(ref)
+                if not owner or not repo or not clone_url:
+                    console.print(Text("Could not parse GitHub repository reference.", style=LOG_WARN))
+                    continue
+                target_dir = dest or repo
+                if os.path.lexists(target_dir):
+                    console.print(Text(f"Target already exists: {target_dir}", style=LOG_WARN))
+                    continue
+                proc = _run_with_ascii_progress(
+                    "git clone",
+                    lambda: _run_proc(["git", "clone", clone_url, target_dir], cwd=os.getcwd()),
+                )
+                if proc.returncode == 0:
+                    console.print(Text(f"Cloned {owner}/{repo} -> {target_dir}", style=LOG_OK))
+                else:
+                    console.print(Text("Git clone failed.", style=LOG_ERR))
+                    if (proc.stderr or "").strip():
+                        clip = (proc.stderr or "").strip()[:1200]
+                        if len((proc.stderr or "").strip()) > 1200:
+                            clip += "..."
+                        console.print(Text(clip, style=LOG_WARN))
+                console.print()
                 continue
 
             task, session_directive = parse_session_directive(task)

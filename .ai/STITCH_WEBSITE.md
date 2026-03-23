@@ -17,6 +17,9 @@ These rules apply when Cogem is refining **UI-heavy** work (websites, landing pa
 - Establish a **small** palette (1–2 accents + neutrals) and a **type scale** (e.g. 3–4 steps). Do not invent random font sizes per section.
 - Spacing must follow a **consistent rhythm** (e.g. 4/8/12/16px or a spacing scale via custom properties).
 - Contrast: text/background pairs should meet common WCAG AA intent for body copy (treat seriously even if not formally measured).
+- Avoid obvious “AI-made” visual signatures by default: neon gradient backgrounds, excessive glassmorphism, repetitive hero sections, identical card blocks across sections, and over-smoothed rounded corners everywhere.
+- Do not default to overused AI stack fonts/themes unless asked (e.g. Inter/Poppins + generic startup gradient). Pick typography and accents based on product context and audience.
+- If the user explicitly requests a font/theme/style, follow that request exactly (this rule overrides anti-template defaults).
 
 ## What to change vs what not to change
 

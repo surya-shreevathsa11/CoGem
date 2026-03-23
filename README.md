@@ -357,6 +357,8 @@ While Cogem is running, you can change models without restarting:
 | `/gemini/model` | Show Gemini LLM (`gemini -m`), this session, and startup default |
 | `/gemini/model <MODEL_ID>` | Use that ID for **all Gemini** calls this session |
 | `/gemini/model reset` | Restore Gemini model from `--gemini-model` / `COGEM_GEMINI_MODEL` |
+| `/github/info <url or owner/repo>` | Show public GitHub repository metadata (description, stars, language, branch) |
+| `/github/clone <url or owner/repo> [dest]` | Clone repository into local folder (`dest` optional) |
 
 ### Session directives (task mode)
 
@@ -375,6 +377,7 @@ Prefix the **first line** of your message with one of these. They stack with `@`
 In your task text you can reference paths so their contents are included in **BUILD** prompts (Codex + Gemini):
 
 - `@relative/path/to/file.py` — file contents (UTF-8 text; very large files are truncated)
+- `@docs/spec.pdf` — PDF text extraction (best effort; page-limited)
 - `@src` or `@docs/` — directory tree listing (depth and entry limits apply)
 - `@"path with spaces/file.txt"` — use double quotes inside the `@…` form for spaces
 
@@ -426,6 +429,7 @@ There is **no guaranteed public Stitch API** in cogem: integration is **pluggabl
 | `COGEM_SUBPROCESS_TIMEOUT_SEC` | Integer seconds; abort a stuck `codex` / `gemini` subprocess after this time |
 | `COGEM_AT_MAX_FILE_BYTES` | Max bytes read per `@` file (default `400000`) |
 | `COGEM_AT_MAX_TOTAL_CHARS` | Max total characters for all `@` attachments in one turn (default `120000`) |
+| `COGEM_AT_MAX_PDF_PAGES` | Max pages extracted from a PDF `@` mention (default `30`) |
 | `COGEM_STITCH` | `1` (default) / `0` — enable or disable the Stitch stage for UI-heavy tasks |
 | `COGEM_STITCH_CLI` | Optional: executable for a Stitch adapter (stdin sends the prompt unless `COGEM_STITCH_CLI_STDIN=0` + temp file) |
 | `COGEM_STITCH_CLI_ARGS` | Extra argv appended after the CLI command |

@@ -81,12 +81,19 @@ def _try_mcp_adapter(prompt: str) -> StitchResult:
     if not stitch_mcp_enabled():
         return StitchResult.unavailable("mcp", "disabled (set COGEM_STITCH_MCP=1 to enable)")
 
-    html, detail = call_stitch_mcp_generate(prompt)
-    if html and looks_like_ui_content(html):
-        return StitchResult.direct(html, "mcp")
-    if html:
-        return StitchResult.direct(html, "mcp")
-    return StitchResult.unavailable("mcp", detail or "no HTML returned")
+    attempts = _stitch_retry_attempts()
+    last_detail = ""
+    for _i in range(attempts):
+        html, detail = call_stitch_mcp_generate(prompt)
+        if html and looks_like_ui_content(html):
+            return StitchResult.direct(html, "mcp")
+        if html:
+            return StitchResult.direct(html, "mcp")
+        last_detail = detail or "no HTML returned"
+        # Retry only transient-ish failures.
+        if not _looks_transient_stitch_error(last_detail):
+            break
+    return StitchResult.unavailable("mcp", last_detail)
 
 
 def _try_cli_adapter(prompt: str) -> StitchResult:
@@ -195,17 +202,25 @@ def _try_http_adapter(prompt: str) -> StitchResult:
     method = (os.environ.get("COGEM_STITCH_HTTP_METHOD") or "POST").upper()
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
-    try:
-        with urllib.request.urlopen(req, timeout=_timeout_sec()) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-        parsed = _extract_text_from_http_response(body)
-        if parsed and _looks_like_markup(parsed):
-            return StitchResult.direct(parsed, "http")
-        if parsed:
-            return StitchResult.direct(parsed, "http")
-        return StitchResult.unavailable("http", "empty or non-text response")
-    except (urllib.error.URLError, OSError) as e:
-        return StitchResult.unavailable("http", str(e))
+    attempts = _stitch_retry_attempts()
+    last_err = ""
+    for _i in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=_timeout_sec()) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+            parsed = _extract_text_from_http_response(body)
+            if parsed and _looks_like_markup(parsed):
+                return StitchResult.direct(parsed, "http")
+            if parsed:
+                return StitchResult.direct(parsed, "http")
+            last_err = "empty or non-text response"
+            if not _looks_transient_stitch_error(last_err):
+                break
+        except (urllib.error.URLError, OSError) as e:
+            last_err = str(e)
+            if not _looks_transient_stitch_error(last_err):
+                break
+    return StitchResult.unavailable("http", last_err or "http adapter failed")
 
 
 def _extract_text_from_http_response(body: str) -> str:
@@ -240,6 +255,34 @@ def _try_browser_adapter(prompt: str) -> StitchResult:
         "browser",
         "browser automation adapter is not implemented (intentionally brittle; use CLI or manual export).",
     )
+
+
+def _stitch_retry_attempts() -> int:
+    try:
+        return max(1, int(os.environ.get("COGEM_STITCH_RETRY_ATTEMPTS", "2")))
+    except ValueError:
+        return 2
+
+
+def _looks_transient_stitch_error(detail: str) -> bool:
+    d = (detail or "").lower()
+    transient_markers = (
+        "timeout",
+        "timed out",
+        "temporarily",
+        "temporarily unavailable",
+        "connection reset",
+        "connection refused",
+        "connection aborted",
+        "broken pipe",
+        "502",
+        "503",
+        "504",
+        "no tools/call response",
+        "transport error",
+        "socket",
+    )
+    return any(m in d for m in transient_markers)
 
 
 def format_stitch_context_for_codex(stitch_content: str) -> str:

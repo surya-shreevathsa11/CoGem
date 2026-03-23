@@ -14,6 +14,7 @@ def build_stitch_prompt(user_task: str) -> str:
     raw = (user_task or "").strip()
     if not raw:
         raw = "A modern web experience with clear hierarchy and polished visuals."
+    explicit_style = _has_explicit_style_request(raw)
 
     # Light extraction hints (best-effort; Stitch still interprets).
     product_hint = _first_line(raw)[:200]
@@ -40,6 +41,11 @@ def build_stitch_prompt(user_task: str) -> str:
         - Establish a restrained palette (2–3 core colors + neutrals) and consistent type scale.
         - Use a clear grid; avoid random alignment.
         - Prefer subtle motion only if it aids comprehension (no gratuitous animation).
+        - Make it feel designed by a human product team, not an AI template.
+        - Avoid common AI-look defaults unless explicitly requested: neon purple/blue gradients, glassmorphism overload, oversaturated accent stacks, generic startup hero blocks, and repetitive rounded cards with identical shadows.
+        - Prefer editorial restraint: meaningful whitespace, asymmetry where useful, nuanced contrast, and section-specific rhythm.
+        - Avoid defaulting to overused AI fonts (e.g. Inter/Poppins everywhere) unless requested. Choose typography that matches the product domain and tone.
+        - Use authentic visual hierarchy with varied component densities; do not make every section look cloned.
 
         ### Responsiveness
         - Mobile-first layout; readable line lengths; tap targets ≥ 44px where applicable.
@@ -57,6 +63,9 @@ def build_stitch_prompt(user_task: str) -> str:
         ### Deliverable
         Output clean, maintainable HTML/CSS (and minimal JS only if needed). Prefer modern CSS (flex/grid, custom properties). Avoid heavy frameworks unless the user asked for a specific stack.
 
+        ### Style override rule
+        {"User did not specify a font/theme. Choose a distinctive but production-safe style direction that avoids generic AI aesthetics." if not explicit_style else "User explicitly requested a style/font/theme. Honor that request exactly and do not override it with anti-template rules."}
+
         ### Original user request (verbatim context)
         {raw}
         """
@@ -66,3 +75,17 @@ def build_stitch_prompt(user_task: str) -> str:
 def _first_line(text: str) -> str:
     line = text.splitlines()[0].strip()
     return re.sub(r"\s+", " ", line)
+
+
+def _has_explicit_style_request(text: str) -> bool:
+    t = (text or "").lower()
+    return bool(
+        re.search(
+            r"\b("
+            r"font|typeface|typography|theme|style|brand|branding|palette|color scheme|"
+            r"dark mode|light mode|minimalist|brutalist|glassmorphism|neumorphism|"
+            r"material design|tailwind ui|use [a-z0-9 _-]+ font|use [a-z0-9 _-]+ theme"
+            r")\b",
+            t,
+        )
+    )

@@ -29,6 +29,7 @@ def test_build_stitch_prompt_non_empty():
     assert "portfolio" in p.lower() or "product" in p.lower()
     assert "accessibility" in p.lower()
     assert "responsive" in p.lower()
+    assert "ai template" in p.lower() or "ai-made" in p.lower()
 
 
 def test_skip_stitch_large_html_attachment():
@@ -58,3 +59,9 @@ def test_stitch_mcp_flag(monkeypatch):
     assert not stitch_mcp_enabled()
     monkeypatch.setenv("COGEM_STITCH_MCP", "1")
     assert stitch_mcp_enabled()
+
+
+def test_build_stitch_prompt_style_override_present():
+    p = build_stitch_prompt("Build a homepage using the Inter font and dark theme")
+    assert "style override rule" in p.lower()
+    assert "explicitly requested a style" in p.lower()
