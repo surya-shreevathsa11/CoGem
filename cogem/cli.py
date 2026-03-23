@@ -159,6 +159,7 @@ def main():
     try:
         from prompt_toolkit import PromptSession
         from prompt_toolkit.completion import Completer
+        from prompt_toolkit.key_binding import KeyBindings
         from prompt_toolkit.history import InMemoryHistory
         from prompt_toolkit.output.color_depth import ColorDepth
         from prompt_toolkit.shortcuts import CompleteStyle
@@ -166,6 +167,7 @@ def main():
     except ImportError:
         PromptSession = None
         Completer = None  # type: ignore
+        KeyBindings = None  # type: ignore
         CompleteStyle = None  # type: ignore
         InMemoryHistory = None  # type: ignore
         Style = None  # type: ignore
@@ -1160,14 +1162,29 @@ __TASK__
         ):
             _cd = ColorDepth.TRUE_COLOR
 
+        _task_prompt_keys = KeyBindings()
+
+        @_task_prompt_keys.add("enter")
+        def _submit_on_enter(event):
+            # Enter submits the prompt.
+            event.current_buffer.validate_and_handle()
+
+        @_task_prompt_keys.add("s-enter")
+        def _newline_on_shift_enter(event):
+            # Shift+Enter inserts a newline instead of submitting.
+            event.current_buffer.insert_text("\n")
+
         task_prompt_session = PromptSession(
             completer=CogemCompleter(),
             history=InMemoryHistory(),
+            multiline=True,
             complete_while_typing=True,
             complete_style=CompleteStyle.COLUMN,
             style=_completion_style,
             color_depth=_cd,
             reserve_space_for_menu=14,
+            prompt_continuation="  ... ",
+            key_bindings=_task_prompt_keys,
         )
 
     def read_task_line(prompt: str = "What would you like to do? ") -> str:
