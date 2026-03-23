@@ -189,22 +189,14 @@ def main():
         Style = None  # type: ignore
         ColorDepth = None  # type: ignore
 
-    from cogem.stitch import (
-        build_stitch_prompt,
-        detect_frontend_task,
-        detect_stitch_frontend_heavy_task,
-        should_skip_stitch_due_to_attachments,
-        try_stitch_adapters,
-    )
-    from cogem.stitch.adapters import format_stitch_context_for_codex, looks_like_ui_content
+    from cogem.stitch import detect_stitch_frontend_heavy_task
+    from cogem.stitch.adapters import looks_like_ui_content
     from cogem.task_intent import build_prerequisite_first_prompt, detect_prerequisite_first_task
-    from cogem.repo_awareness import (
-        AutoRepoContextConfig,
-        auto_repo_context_block_for_task,
-    )
-    from cogem.graph import build_symbol_dependency_context_from_py_files
     from cogem.write_safety import plan_safe_writes
     from cogem.command_policy import ALLOWED_EXECUTABLES, validate_local_command_args
+    from cogem.services.commands import handle_pre_pipeline_command
+    from cogem.services.pipeline import build_context_blocks, maybe_run_stitch_stage
+    from cogem.services.routing import parse_session_directive, resolve_turn_mode
 
     _ap = argparse.ArgumentParser(
         prog="cogem",
@@ -1810,21 +1802,6 @@ __TASK__
             f"({allow_local_hint})."
         )
 
-    _SESSION_DIRECTIVE = re.compile(
-        r"^/(build|plan|debug|agent|ask)(?:\s+|$)(.*)$",
-        re.I | re.DOTALL,
-    )
-
-    def parse_session_directive(raw: str) -> Tuple[str, Optional[str]]:
-        """Strip one leading /build /plan /debug /agent /ask; return (rest, directive name or None)."""
-        s = raw.strip()
-        m = _SESSION_DIRECTIVE.match(s)
-        if not m:
-            return raw, None
-        name = m.group(1).lower()
-        rest = (m.group(2) or "").strip()
-        return rest, name
-
     # (command, right-column description) — Codex-style two-column completion menu
     _SLASH_COMMANDS_META: Tuple[Tuple[str, str], ...] = (
         ("/build", "Force full implementation pipeline (skip BUILD/CHAT router)"),
@@ -2210,140 +2187,6 @@ __TASK__
         prompt_label = Text(prompt, style=TITLE)
         return console.input(prompt_label).strip()
 
-    def parse_build_or_chat(raw: str):
-        """Return ('workflow', None) or ('chat', reply_text)."""
-        text = raw.lstrip("\ufeff").strip()
-        lines = text.splitlines()
-
-        def first_route_word(line: str) -> str:
-            s = re.sub(r"[*_`#]", "", line).strip()
-            if not s:
-                return ""
-            parts = s.split(None, 1)
-            return parts[0].upper().strip(".,:;!?\"'`")
-
-        for i, line in enumerate(lines):
-            w = first_route_word(line)
-            if not w:
-                continue
-            if w == "BUILD":
-                return "workflow", None
-            if w == "CHAT":
-                s = re.sub(r"[*_`#]", "", line).strip()
-                tokens = s.split(None, 1)
-                same_line = tokens[1].strip() if len(tokens) > 1 else ""
-                following = "\n".join(lines[i + 1 :]).strip()
-                parts = [p for p in (same_line, following) if p]
-                rest = "\n".join(parts).strip()
-                if not rest:
-                    rest = (
-                        "I'm Cogem: when you describe something to build or code to change, "
-                        "I'll run the full loop. What would you like to work on?"
-                    )
-                return "chat", rest
-        return "workflow", None
-
-    def looks_like_build_task(task: str) -> bool:
-        """Heuristic when the router mis-labels CHAT (e.g. coding-language or stack switch)."""
-        t = task.lower()
-        if len(t.strip()) < 4:
-            return False
-        intent = (
-            "build ",
-            "create ",
-            "make a ",
-            "write a ",
-            "implement ",
-            "portfolio",
-            "website",
-            "web site",
-            "landing",
-            "write ",
-            "code ",
-            " app",
-            "debug",
-            "refactor",
-            "fix ",
-            "add ",
-            "api",
-            "script",
-            "html",
-            "css",
-            "project",
-            "feature",
-            "frontend",
-            "backend",
-            "site ",
-            "cli",
-        )
-        if any(x in t for x in intent):
-            return True
-        # Common programming languages / runtimes / frameworks (stack switches still = build).
-        tech = (
-            "javascript",
-            "typescript",
-            "python",
-            "golang",
-            "using go",
-            " in go",
-            " with go",
-            " rust",
-            "java",
-            "kotlin",
-            "swift",
-            "ruby",
-            "php",
-            "csharp",
-            "c#",
-            "c++",
-            "react",
-            "vue",
-            "svelte",
-            "angular",
-            "next.js",
-            "nextjs",
-            "nuxt",
-            "astro",
-            "remix",
-            "express",
-            "fastapi",
-            "django",
-            "flask",
-            "spring",
-            "rails",
-            "laravel",
-            "dotnet",
-            "node",
-            "bun",
-            "deno",
-            "tailwind",
-            "webpack",
-            "vite",
-            "postgres",
-            "mongodb",
-            "sqlite",
-        )
-        if any(x in t for x in tech):
-            return True
-        non_en = (
-            "créer",
-            "creer",
-            "sitio",
-            "página",
-            "pagina",
-            "construir",
-            "sitio web",
-            "código",
-            "codigo",
-            "proyecto",
-            "aplicación",
-            "aplicacion",
-            "site web",
-            "développer",
-            "developper",
-        )
-        return any(x in t for x in non_en)
-
     def extract_persist_directives(text: str):
         """Strip PERSIST lines from model text; return (visible_reply, [(kind, value), ...])."""
         out_lines = []
@@ -2725,344 +2568,40 @@ No markdown, no other text."""
                 )
                 continue
 
-            if task.strip().lower() in ("/exit", "/quit"):
-                console.print()
-                console.print(Text("Goodbye.", style=TITLE))
+            handled, should_exit = handle_pre_pipeline_command(
+                task,
+                {
+                    "console": console,
+                    "Text": Text,
+                    "MUTED": MUTED,
+                    "TITLE": TITLE,
+                    "LOG_WARN": LOG_WARN,
+                    "LOG_ERR": LOG_ERR,
+                    "LOG_OK": LOG_OK,
+                    "section_rule": section_rule,
+                    "models": models,
+                    "_codex_model": _codex_model,
+                    "_gemini_model": _gemini_model,
+                    "_repo_root": _repo_root,
+                    "_select_test_cmd": _select_test_cmd,
+                    "_select_lint_cmd": _select_lint_cmd,
+                    "_run_local_command": _run_local_command,
+                    "_parse_github_repo_ref": _parse_github_repo_ref,
+                    "_github_repo_info": _github_repo_info,
+                    "ensure_run_permissions": ensure_run_permissions,
+                    "run_permissions": run_permissions,
+                    "_run_with_ascii_progress": _run_with_ascii_progress,
+                    "_run_proc": _run_proc,
+                    "_shlex_split_cmd": _shlex_split_cmd,
+                    "_mention_roots_list": _mention_roots_list,
+                    "_resolve_mention_path": _resolve_mention_path,
+                    "_path_allowed_for_mention": _path_allowed_for_mention,
+                    "_read_file_for_mention": _read_file_for_mention,
+                },
+            )
+            if should_exit:
                 break
-
-            if task.startswith("/codex/model"):
-                rest = task[len("/codex/model"):].strip()
-                if not rest:
-                    console.print(
-                        Text(
-                            "Codex LLM — used for drafting and improving code (`codex exec -m …`). "
-                            "Pick any model ID your Codex CLI supports (varies by account; e.g. o3, gpt-5, "
-                            "or provider-specific names). Gemini is configured separately with /gemini/model.",
-                            style=MUTED,
-                        )
-                    )
-                    console.print(
-                        Text(
-                            f"  This session: {models.get('codex') or 'default (no -m)'}",
-                            style=MUTED,
-                        )
-                    )
-                    console.print(
-                        Text(
-                            f"  From startup (--codex-model / COGEM_CODEX_MODEL): {_codex_model or '(none)'}",
-                            style=MUTED,
-                        )
-                    )
-                    console.print(
-                        Text(
-                            "  Usage: /codex/model <MODEL_ID>   or   /codex/model reset",
-                            style=MUTED,
-                        )
-                    )
-                    continue
-                if rest.lower() == "reset":
-                    models["codex"] = _codex_model
-                    console.print(
-                        Text(
-                            f"Codex LLM reset to: {models.get('codex') or 'default (no -m)'}",
-                            style=TITLE,
-                        )
-                    )
-                    continue
-                models["codex"] = rest
-                console.print(Text(f"Codex LLM set to: {rest}", style=TITLE))
-                continue
-
-            if task.startswith("/gemini/model"):
-                rest = task[len("/gemini/model"):].strip()
-                if not rest:
-                    console.print(
-                        Text(
-                            "Gemini LLM — used for review and final summary (`gemini -m …`). "
-                            "Pick any model ID your Gemini CLI supports (e.g. gemini-2.5-pro, "
-                            "gemini-2.5-flash). Codex is configured separately with /codex/model.",
-                            style=MUTED,
-                        )
-                    )
-                    console.print(
-                        Text(
-                            f"  This session: {models.get('gemini') or 'default (no -m)'}",
-                            style=MUTED,
-                        )
-                    )
-                    console.print(
-                        Text(
-                            f"  From startup (--gemini-model / COGEM_GEMINI_MODEL): {_gemini_model or '(none)'}",
-                            style=MUTED,
-                        )
-                    )
-                    console.print(
-                        Text(
-                            "  Usage: /gemini/model <MODEL_ID>   or   /gemini/model reset",
-                            style=MUTED,
-                        )
-                    )
-                    continue
-                if rest.lower() == "reset":
-                    models["gemini"] = _gemini_model
-                    console.print(
-                        Text(
-                            f"Gemini LLM reset to: {models.get('gemini') or 'default (no -m)'}",
-                            style=TITLE,
-                        )
-                    )
-                    continue
-                models["gemini"] = rest
-                console.print(Text(f"Gemini LLM set to: {rest}", style=TITLE))
-                continue
-
-            if task.startswith("/repo/info"):
-                root = _repo_root()
-                console.print()
-                section_rule("Repo info")
-                console.print()
-                console.print(Text(f"Repo root: {root}", style=MUTED))
-                try:
-                    proc_inside = subprocess.run(
-                        ["git", "rev-parse", "--is-inside-work-tree"],
-                        capture_output=True,
-                        text=True,
-                        cwd=root,
-                    )
-                    inside = (proc_inside.stdout or "").strip().lower() == "true"
-                except Exception:
-                    inside = False
-                if not inside:
-                    console.print(Text("Git: not a git repository (or git unavailable).", style=LOG_WARN))
-                    console.print()
-                    continue
-                try:
-                    proc_branch = subprocess.run(
-                        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                        capture_output=True,
-                        text=True,
-                        cwd=root,
-                    )
-                    branch = (proc_branch.stdout or "").strip() or "(unknown)"
-                    console.print(Text(f"Git branch: {branch}", style=MUTED))
-                except Exception:
-                    pass
-                try:
-                    proc_last = subprocess.run(
-                        ["git", "log", "-1", "--oneline"],
-                        capture_output=True,
-                        text=True,
-                        cwd=root,
-                    )
-                    last = (proc_last.stdout or "").strip()
-                    if last:
-                        console.print(Text(f"Last commit: {last}", style=MUTED))
-                except Exception:
-                    pass
-                try:
-                    proc_status = subprocess.run(
-                        ["git", "status", "--porcelain"],
-                        capture_output=True,
-                        text=True,
-                        cwd=root,
-                    )
-                    status = (proc_status.stdout or "").strip()
-                    console.print(Text("Working tree status (git --porcelain):", style=MUTED))
-                    console.print(status or "(clean)")
-                except Exception:
-                    pass
-                console.print()
-                continue
-
-            if task.startswith("/test"):
-                cmd = _select_test_cmd()
-                console.print()
-                section_rule("Tests")
-                if not cmd:
-                    console.print(Text("No known test command for this repo type.", style=LOG_WARN))
-                    console.print()
-                    continue
-                rc, out, err = _run_local_command(cmd, "tests")
-                if out.strip():
-                    console.print(out.strip())
-                if rc != 0 and (err or "").strip():
-                    console.print(Text(err.strip()[:2000], style=LOG_WARN))
-                continue
-
-            if task.startswith("/lint"):
-                cmd = _select_lint_cmd()
-                console.print()
-                section_rule("Lint")
-                if not cmd:
-                    console.print(Text("No known lint command for this repo type.", style=LOG_WARN))
-                    console.print()
-                    continue
-                rc, out, err = _run_local_command(cmd, "lint")
-                if out.strip():
-                    console.print(out.strip())
-                if rc != 0 and (err or "").strip():
-                    console.print(Text(err.strip()[:2000], style=LOG_WARN))
-                continue
-
-            if task.startswith("/pdf"):
-                rest = task[len("/pdf") :].strip()
-                if not rest:
-                    console.print(
-                        Text(
-                            "Usage: /pdf <text> [out.pdf]  OR  /pdf @path/to/file.txt [out.pdf]",
-                            style=MUTED,
-                        )
-                    )
-                    console.print()
-                    continue
-
-                tokens = _shlex_split_cmd(rest)
-                if not tokens:
-                    console.print(Text("Usage: /pdf <text> [out.pdf]", style=MUTED))
-                    console.print()
-                    continue
-
-                desired_out = None
-                if len(tokens) >= 2 and tokens[-1].lower().endswith(".pdf"):
-                    desired_out = tokens[-1]
-                    content_tokens = tokens[:-1]
-                else:
-                    content_tokens = tokens
-
-                body = ""
-                if (
-                    len(content_tokens) == 1
-                    and content_tokens[0].startswith("@")
-                    and not content_tokens[0].startswith("@@")
-                ):
-                    rel = content_tokens[0][1:]
-                    roots = _mention_roots_list()
-                    abs_p = _resolve_mention_path(rel)
-                    if not abs_p or not _path_allowed_for_mention(abs_p, roots):
-                        console.print(
-                            Text(f"Could not read @ mention: {content_tokens[0]}", style=LOG_WARN)
-                        )
-                        console.print()
-                        continue
-                    try:
-                        max_b = max(
-                            4096, int(os.environ.get("COGEM_AT_MAX_FILE_BYTES", "400000"))
-                        )
-                    except ValueError:
-                        max_b = 400000
-                    body = _read_file_for_mention(abs_p, max_b)
-                else:
-                    body = " ".join(content_tokens).strip()
-
-                if not body:
-                    console.print(Text("No PDF content provided.", style=LOG_WARN))
-                    console.print()
-                    continue
-
-                from cogem.pdf_tools import generate_pdf_from_text, pdf_path_for_text_request
-
-                final_path, display_name = pdf_path_for_text_request(os.getcwd(), desired_out)
-
-                # Safety: only allow writes within mention roots.
-                roots = _mention_roots_list()
-                final_abs = os.path.realpath(final_path)
-                if not any(
-                    final_abs == os.path.realpath(r) or final_abs.startswith(os.path.realpath(r) + os.sep)
-                    for r in roots
-                ):
-                    console.print(
-                        Text("Refusing to write PDF outside the allowed workspace.", style=LOG_WARN)
-                    )
-                    console.print()
-                    continue
-
-                try:
-                    generate_pdf_from_text(body, final_path)
-                except Exception as e:
-                    console.print(Text(f"PDF generation failed: {e}", style=LOG_ERR))
-                    console.print()
-                    continue
-
-                console.print()
-                section_rule("PDF generated")
-                console.print(Text(f"Wrote: {display_name}", style=LOG_OK))
-                console.print(
-                    Text("Generated PDFs are plain-text layout PDFs.", style=MUTED)
-                )
-                console.print()
-                continue
-
-            if task.startswith("/run"):
-                rest = task[len("/run"):].strip()
-                if not rest:
-                    console.print(Text("Usage: /run <command + args>", style=MUTED))
-                    continue
-                rc, out, err = _run_local_command(rest, "run")
-                console.print()
-                section_rule("Command output")
-                if out.strip():
-                    console.print(out.strip())
-                if (err or "").strip():
-                    console.print(Text((err or "").strip()[:2000], style=LOG_WARN))
-                console.print()
-                continue
-
-            if task.startswith("/github/info"):
-                rest = task[len("/github/info"):].strip()
-                if not rest:
-                    console.print(
-                        Text("Usage: /github/info <https://github.com/owner/repo or owner/repo>", style=MUTED)
-                    )
-                    continue
-                owner, repo, _clone_url = _parse_github_repo_ref(rest)
-                if not owner or not repo:
-                    console.print(Text("Could not parse GitHub repository reference.", style=LOG_WARN))
-                    continue
-                console.print()
-                info = _github_repo_info(owner, repo)
-                section_rule("GitHub repository info")
-                console.print()
-                console.print(info)
-                console.print()
-                continue
-
-            if task.startswith("/github/clone"):
-                rest = task[len("/github/clone"):].strip()
-                if not rest:
-                    console.print(
-                        Text("Usage: /github/clone <https://github.com/owner/repo or owner/repo> [dest]", style=MUTED)
-                    )
-                    continue
-                parts = rest.split()
-                ref = parts[0].strip()
-                dest = parts[1].strip() if len(parts) > 1 else ""
-                owner, repo, clone_url = _parse_github_repo_ref(ref)
-                if not owner or not repo or not clone_url:
-                    console.print(Text("Could not parse GitHub repository reference.", style=LOG_WARN))
-                    continue
-                target_dir = dest or repo
-                if os.path.lexists(target_dir):
-                    console.print(Text(f"Target already exists: {target_dir}", style=LOG_WARN))
-                    continue
-                ensure_run_permissions()
-                if not run_permissions.get("granted"):
-                    console.print(Text("Local command execution denied by user permission.", style=LOG_WARN))
-                    console.print()
-                    continue
-                proc = _run_with_ascii_progress(
-                    "git clone",
-                    lambda: _run_proc(["git", "clone", clone_url, target_dir], cwd=os.getcwd()),
-                )
-                if proc.returncode == 0:
-                    console.print(Text(f"Cloned {owner}/{repo} -> {target_dir}", style=LOG_OK))
-                else:
-                    console.print(Text("Git clone failed.", style=LOG_ERR))
-                    if (proc.stderr or "").strip():
-                        clip = (proc.stderr or "").strip()[:1200]
-                        if len((proc.stderr or "").strip()) > 1200:
-                            clip += "..."
-                        console.print(Text(clip, style=LOG_WARN))
-                console.print()
+            if handled:
                 continue
 
             task, session_directive = parse_session_directive(task)
@@ -3139,90 +2678,31 @@ No markdown, no other text."""
                 continue
 
             router_hint = ROUTER_DIRECTIVE_HINTS.get(session_directive or "", "")
-
-            # ---------- /build: skip router ----------
-            if session_directive == "build":
-                mode = "workflow"
-                chat_reply = None
-                trace_done(
-                    "Directive /build: skipping classifier; running the full build pipeline."
-                )
-            else:
-                trace_doing(
-                    "I'm having Codex classify this turn: full build pipeline versus a direct conversational reply (using your text and saved context)."
-                )
-                router_raw, router_err, router_rc = run_codex(
-                    build_router_prompt(
-                        task_clean,
-                        mem_block
-                        + runtime_stitch_capabilities_block()
-                        + runtime_cogem_commands_capabilities_block(),
-                        router_hint,
-                    ),
-                    "Codex: routing (build vs conversation)...",
-                )
-                if router_rc != 0:
-                    trace_done(
-                        "Routing failed; not guessing BUILD/CHAT. Fix the error below, then retry."
-                    )
-                    console.print()
-                    _say(f"[cogem] ERROR: Codex routing exited with code {router_rc}.")
-                    if (router_err or "").strip():
-                        clip = (router_err or "").strip()[:1200]
-                        if len((router_err or "").strip()) > 1200:
-                            clip += "..."
-                        console.print(Text(clip, style=LOG_ERR))
-                    console.print(
-                        Text(
-                            "Hint: cogem runs `codex exec --skip-git-repo-check`. "
-                            "If this persists, check `codex` on PATH and disk permissions.",
-                            style=MUTED,
-                        )
-                    )
-                    console.print()
-                    _token_turn_footer()
-                    continue
-                mode, chat_reply = parse_build_or_chat(router_raw)
-                stitch_heavy_for_routing = detect_stitch_frontend_heavy_task(
-                    task_clean
-                )
-                if mode == "chat" and not detect_prerequisite_first_task(task_clean):
-                    if looks_like_build_task(task_clean) or stitch_heavy_for_routing:
-                        mode = "workflow"
-                        chat_reply = None
-
-            if (
-                mode == "workflow"
-                and detect_prerequisite_first_task(task_clean)
-                and session_directive != "build"
-            ):
-                trace_doing(
-                    "Your message asks for something before building; answering that first "
-                    "(skipping Stitch and the full code pipeline this turn)."
-                )
-                pr_raw, pr_err, pr_rc = run_codex(
-                    build_prerequisite_first_prompt(task_clean, mem_block),
-                    "Codex: answering prerequisite question first...",
-                )
-                if pr_rc != 0:
-                    trace_done(
-                        "Prerequisite answer step failed; fix the error below, then retry or use /ask."
-                    )
-                    console.print()
-                    _say(f"[cogem] ERROR: Codex exited with code {pr_rc}.")
-                    if (pr_err or "").strip():
-                        clip = (pr_err or "").strip()[:1200]
-                        if len((pr_err or "").strip()) > 1200:
-                            clip += "..."
-                        console.print(Text(clip, style=LOG_ERR))
-                    console.print()
-                    _token_turn_footer()
-                    continue
-                mode = "chat"
-                chat_reply = (pr_raw or "").strip()
-                trace_done(
-                    "Prerequisite reply ready; skipping build/Stitch for this turn — ask for the build again when ready."
-                )
+            route = resolve_turn_mode(
+                session_directive=session_directive,
+                task_clean=task_clean,
+                mem_block=mem_block,
+                build_router_prompt=build_router_prompt,
+                run_codex=run_codex,
+                runtime_stitch_capabilities_block=runtime_stitch_capabilities_block,
+                runtime_cogem_commands_capabilities_block=runtime_cogem_commands_capabilities_block,
+                router_hint=router_hint,
+                trace_doing=trace_doing,
+                trace_done=trace_done,
+                _say=_say,
+                console=console,
+                Text=Text,
+                LOG_ERR=LOG_ERR,
+                MUTED=MUTED,
+                _token_turn_footer=_token_turn_footer,
+                detect_stitch_frontend_heavy_task=detect_stitch_frontend_heavy_task,
+                detect_prerequisite_first_task=detect_prerequisite_first_task,
+                build_prerequisite_first_prompt=build_prerequisite_first_prompt,
+            )
+            if route["stop_turn"]:
+                continue
+            mode = route["mode"]
+            chat_reply = route["chat_reply"]
 
             if mode == "chat":
                 if attach_block:
@@ -3254,242 +2734,36 @@ No markdown, no other text."""
             )
             live_reasoning_banner_build(task, mem_block)
 
-            auto_repo_context_on = (
-                os.environ.get("COGEM_AUTO_REPO_CONTEXT", "1").strip().lower()
-                not in ("0", "false", "no", "off", "disabled")
-            )
-            auto_repo_max_chars = int(
-                os.environ.get("COGEM_AUTO_REPO_CONTEXT_MAX_CHARS", "8000")
-            )
-            auto_repo_max_files = int(
-                os.environ.get("COGEM_AUTO_REPO_CONTEXT_MAX_FILES", "6")
-            )
-            auto_repo_max_depth = int(
-                os.environ.get("COGEM_AUTO_REPO_CONTEXT_MAX_DEPTH", "2")
+            auto_context_block, symbol_dep_context_block = build_context_blocks(
+                task=task,
+                task_clean=task_clean,
+                repo_root=_repo_root(),
+                mention_pattern=_AT_MENTION,
+                resolve_mention_path=_resolve_mention_path,
+                mention_roots_list=_mention_roots_list,
+                path_allowed_for_mention=_path_allowed_for_mention,
             )
 
-            auto_context_block = ""
-            if auto_repo_context_on:
-                try:
-                    vector_rag_on = (
-                        os.environ.get("COGEM_VECTOR_RAG", "0").strip().lower()
-                        not in ("0", "false", "no", "off", "disabled")
-                    )
-
-                    if vector_rag_on:
-                        try:
-                            from cogem.vector_index import (
-                                VectorIndexConfig,
-                                semantic_repo_context_block_for_task,
-                            )
-
-                            auto_context_block = semantic_repo_context_block_for_task(
-                                repo_root=_repo_root(),
-                                task=task_clean,
-                                config=VectorIndexConfig(
-                                    enabled=True,
-                                    rebuild=bool(
-                                        os.environ.get(
-                                            "COGEM_VECTOR_REBUILD", "0"
-                                        ).strip()
-                                        .lower()
-                                        in ("1", "true", "yes", "on")
-                                    ),
-                                    top_k=int(
-                                        os.environ.get("COGEM_VECTOR_TOP_K", "8")
-                                    ),
-                                    max_context_chars=auto_repo_max_chars,
-                                    max_chunk_chars=int(
-                                        os.environ.get("COGEM_VECTOR_CHUNK_CHARS", "2500")
-                                    ),
-                                ),
-                            )
-                        except Exception:
-                            auto_context_block = ""
-
-                    if not auto_context_block:
-                        auto_context_block = auto_repo_context_block_for_task(
-                            task=task_clean,
-                            repo_root=_repo_root(),
-                            config=AutoRepoContextConfig(
-                                enabled=True,
-                                max_chars=auto_repo_max_chars,
-                                max_files=auto_repo_max_files,
-                                max_depth=auto_repo_max_depth,
-                            ),
-                        )
-                except Exception:
-                    # Repo awareness should never break builds.
-                    auto_context_block = ""
-
-            symbol_dep_context_on = (
-                os.environ.get("COGEM_SYMBOL_DEP_CONTEXT", "1").strip().lower()
-                not in ("0", "false", "no", "off", "disabled")
+            stitch_ctx = maybe_run_stitch_stage(
+                task_clean=task_clean,
+                task_raw=task,
+                mode=mode,
+                session_directive=session_directive,
+                stitch_feature_on=stitch_feature_on,
+                stitch_website_rules=STITCH_WEBSITE_RULES,
+                attach_block=attach_block,
+                trace_done=trace_done,
+                trace_doing=trace_doing,
+                section_rule=section_rule,
+                console=console,
+                Text=Text,
+                MUTED=MUTED,
+                read_task_line=read_task_line,
+                expand_at_mentions=expand_at_mentions,
+                looks_like_ui_content=looks_like_ui_content,
             )
-            symbol_dep_context_block = ""
-            if symbol_dep_context_on:
-                try:
-                    symbol_index_enabled = (
-                        os.environ.get("COGEM_SYMBOL_INDEX", "1").strip().lower()
-                        not in ("0", "false", "no", "off", "disabled")
-                    )
-                    if symbol_index_enabled:
-                        from cogem.symbols import SymbolIndex
-
-                        symbol_index_box = {"idx": None}
-
-                        def _extract_mentioned_py_files(raw_task: str) -> List[str]:
-                            files: List[str] = []
-                            for m in _AT_MENTION.finditer(raw_task or ""):
-                                p = m.group(1) or m.group(2) or m.group(3)
-                                if not p:
-                                    continue
-                                abs_p = _resolve_mention_path(p.strip())
-                                if not abs_p:
-                                    continue
-                                roots = _mention_roots_list()
-                                if not _path_allowed_for_mention(abs_p, roots):
-                                    continue
-                                if os.path.isfile(abs_p) and abs_p.lower().endswith(".py"):
-                                    files.append(os.path.realpath(abs_p))
-                            # Deduplicate
-                            out: List[str] = []
-                            seen: Set[str] = set()
-                            for f in files:
-                                if f in seen:
-                                    continue
-                                seen.add(f)
-                                out.append(f)
-                            return out
-
-                        py_files = _extract_mentioned_py_files(task or "")
-                        if py_files:
-                            symbol_index_box["idx"] = SymbolIndex(_repo_root())
-                            symbol_dep_context_block = (
-                                build_symbol_dependency_context_from_py_files(
-                                    repo_root=_repo_root(),
-                                    py_files=py_files,
-                                    symbol_index=symbol_index_box["idx"],
-                                    max_symbols=int(
-                                        os.environ.get(
-                                            "COGEM_SYMBOL_DEP_MAX_SYMBOLS",
-                                            "20",
-                                        )
-                                    ),
-                                    max_chars=int(
-                                        os.environ.get(
-                                            "COGEM_SYMBOL_DEP_MAX_CHARS",
-                                            "4000",
-                                        )
-                                    ),
-                                )
-                            )
-                except Exception:
-                    symbol_dep_context_block = ""
-
-            frontend_detected = detect_frontend_task(task_clean)
-            stitch_frontend_heavy = detect_stitch_frontend_heavy_task(task_clean)
-            prereq_first = detect_prerequisite_first_task(task_clean)
-            stitch_block = ""
-            stitch_rules_extra = ""
-            if stitch_frontend_heavy and STITCH_WEBSITE_RULES.strip():
-                stitch_rules_extra = (
-                    "\n\n## STITCH_WEBSITE rules (strict)\n"
-                    + STITCH_WEBSITE_RULES
-                    + "\n"
-                )
-
-            trace_done(
-                "Pipeline gating: "
-                f"mode={mode}, frontend_detected={frontend_detected}, "
-                f"stitch_frontend_heavy={stitch_frontend_heavy}, "
-                f"prerequisite_first={prereq_first}, stitch_feature_on={stitch_feature_on}, "
-                f"session_directive={session_directive or '(none)'}"
-            )
-
-            if (
-                stitch_feature_on
-                and mode == "workflow"
-                and stitch_frontend_heavy
-                and (not prereq_first or session_directive == "build")
-            ):
-                if should_skip_stitch_due_to_attachments(attach_block):
-                    trace_done(
-                        "Frontend task detected; skipping Stitch because @ attachments already include UI/HTML."
-                    )
-                else:
-                    trace_doing(
-                        "Frontend-heavy task detected; running the Google Stitch stage (adapter or manual handoff)."
-                    )
-                    stitch_prompt = build_stitch_prompt(task_clean)
-                    sr = try_stitch_adapters(stitch_prompt)
-                    if sr.mode == "direct" and sr.content:
-                        stitch_block = format_stitch_context_for_codex(sr.content)
-                        trace_done(
-                            f"Stitch: received UI via adapter ({sr.adapter_name}). Continuing with Codex + Gemini."
-                        )
-                    else:
-                        reason = (sr.detail or "").strip()
-                        if reason:
-                            reason = reason.replace("\n", " ")[:220]
-                            trace_done(
-                                "Stitch: direct integration unavailable; using manual handoff "
-                                f"(reason: {reason})."
-                            )
-                        else:
-                            trace_done(
-                                "Stitch: direct integration unavailable; using manual handoff (prompt + export)."
-                            )
-                        console.print()
-                        section_rule("Stitch prompt (copy into Google Stitch)")
-                        console.print()
-                        console.print(stitch_prompt)
-                        console.print()
-                        console.print(
-                            Text(
-                                "Stitch manual fallback.\n"
-                                "1) In Stitch, export the generated frontend (HTML/CSS, or a bundled HTML that includes styles).\n"
-                                "2) Paste it below (preferred: the main HTML, plus any CSS/JS it depends on).\n"
-                                "3) Or provide `@path/to/export.html` / `@path/to/export.css`.\n"
-                                "Press Enter on an empty line to skip.",
-                                style=MUTED,
-                            )
-                        )
-                        console.print()
-                        if not sys.stdin.isatty():
-                            console.print(
-                                Text(
-                                    "Non-interactive stdin: cannot prompt for Stitch paste. "
-                                    "Set COGEM_STITCH_CLI or COGEM_STITCH_HTTP_URL, or run cogem in a real terminal.",
-                                    style=MUTED,
-                                )
-                            )
-                            trace_done(
-                                "Skipping Stitch paste; continuing without Stitch HTML."
-                            )
-                        else:
-                            stitch_in = read_task_line(
-                                "Stitch export — paste code or @path (Enter to skip): "
-                            )
-                            if stitch_in.strip():
-                                if looks_like_ui_content(stitch_in):
-                                    stitch_block = format_stitch_context_for_codex(stitch_in)
-                                else:
-                                    _c2, attach_s = expand_at_mentions(stitch_in)
-                                    if attach_s:
-                                        stitch_block = (
-                                            "\n\n---\n\n## Stitch / UI source (from your files)\n\n"
-                                            + attach_s
-                                        )
-                                    else:
-                                        stitch_block = format_stitch_context_for_codex(stitch_in)
-                                trace_done(
-                                    "Stitch export captured; continuing with Codex draft using this UI context."
-                                )
-                            else:
-                                trace_done(
-                                    "No Stitch export; Codex will draft from your task alone (no Stitch HTML)."
-                                )
+            stitch_block = stitch_ctx["stitch_block"]
+            stitch_rules_extra = stitch_ctx["stitch_rules_extra"]
 
             # ---------- generate ----------
 
