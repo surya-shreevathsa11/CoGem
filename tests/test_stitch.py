@@ -5,6 +5,7 @@ import pytest
 from cogem.stitch import (
     build_stitch_prompt,
     detect_frontend_task,
+    detect_stitch_frontend_heavy_task,
     should_skip_stitch_due_to_attachments,
 )
 from cogem.stitch.adapters import looks_like_ui_content, try_stitch_adapters
@@ -21,6 +22,18 @@ def test_detect_frontend_dashboard():
 def test_detect_frontend_negative_api_only():
     assert not detect_frontend_task(
         "Add a REST API with PostgreSQL migrations and Docker only, no UI"
+    )
+
+
+def test_detect_stitch_frontend_heavy_tailwind():
+    assert detect_stitch_frontend_heavy_task(
+        "Build a dashboard UI using Tailwind CSS for admin users"
+    )
+
+
+def test_detect_stitch_frontend_heavy_requires_explicit_stack():
+    assert not detect_stitch_frontend_heavy_task(
+        "Build a landing page for a SaaS analytics product"
     )
 
 

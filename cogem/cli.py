@@ -179,6 +179,7 @@ def main():
     from cogem.stitch import (
         build_stitch_prompt,
         detect_frontend_task,
+        detect_stitch_frontend_heavy_task,
         should_skip_stitch_due_to_attachments,
         try_stitch_adapters,
     )
@@ -1271,6 +1272,45 @@ __TASK__
             "__TASK__", task_block
         )
 
+    def runtime_stitch_capabilities_block() -> str:
+        """
+        Help the router/chat model answer correctly about Stitch availability.
+        Kept lightweight and derived from env vars + basic executables checks.
+        """
+        cli_cmd = (os.environ.get("COGEM_STITCH_CLI") or "").strip()
+        http_url = (os.environ.get("COGEM_STITCH_HTTP_URL") or "").strip()
+        mcp_raw = (os.environ.get("COGEM_STITCH_MCP") or "").strip().lower()
+
+        # Prefer calling the existing helper if available, but keep this robust.
+        try:
+            from cogem.stitch.mcp_stdio import stitch_mcp_enabled
+
+            mcp_enabled = stitch_mcp_enabled()
+        except Exception:
+            mcp_enabled = mcp_raw not in ("0", "false", "no", "off", "disabled", "")
+
+        cli_line = (
+            f"enabled (COGEM_STITCH_CLI={cli_cmd})"
+            if cli_cmd
+            else "not configured (COGEM_STITCH_CLI is unset)"
+        )
+        mcp_line = (
+            f"enabled (COGEM_STITCH_MCP={mcp_raw or 'default-on'})"
+            if mcp_enabled
+            else "disabled (COGEM_STITCH_MCP=0)"
+        )
+        http_line = (
+            "enabled (COGEM_STITCH_HTTP_URL is set)" if http_url else "not configured"
+        )
+
+        return (
+            "\n\n## Runtime Stitch capabilities (this session)\n"
+            f"- Stitch CLI adapter: {cli_line}\n"
+            f"- Stitch MCP adapter: {mcp_line}\n"
+            f"- Stitch HTTP adapter: {http_line}\n"
+            "- Stitch manual fallback: always available (export/paste)\n"
+        )
+
     _SESSION_DIRECTIVE = re.compile(
         r"^/(build|plan|debug|agent|ask)(?:\s+|$)(.*)$",
         re.I | re.DOTALL,
@@ -1509,6 +1549,15 @@ __TASK__
             if "27;2;13" in d or "\x1b[27;2;13" in d:
                 event.current_buffer.insert_text("\n")
                 return
+            # When the completion menu is open, Enter should accept the selected
+            # completion (not submit the full prompt).
+            try:
+                cs = event.current_buffer.complete_state
+                if cs and cs.current_completion is not None:
+                    event.current_buffer.apply_completion(cs.current_completion)
+                    return
+            except Exception:
+                pass
             event.current_buffer.validate_and_handle()
 
         @_task_prompt_keys.add("s-tab")
@@ -2312,7 +2361,11 @@ No markdown, no other text."""
                     "I'm having Codex classify this turn: full build pipeline versus a direct conversational reply (using your text and saved context)."
                 )
                 router_raw, router_err, router_rc = run_codex(
-                    build_router_prompt(task_clean, mem_block, router_hint),
+                    build_router_prompt(
+                        task_clean,
+                        mem_block + runtime_stitch_capabilities_block(),
+                        router_hint,
+                    ),
                     "Codex: routing (build vs conversation)...",
                 )
                 if router_rc != 0:
@@ -2337,13 +2390,13 @@ No markdown, no other text."""
                     _token_turn_footer()
                     continue
                 mode, chat_reply = parse_build_or_chat(router_raw)
-                if (
-                    mode == "chat"
-                    and looks_like_build_task(task_clean)
-                    and not detect_prerequisite_first_task(task_clean)
-                ):
-                    mode = "workflow"
-                    chat_reply = None
+                stitch_heavy_for_routing = detect_stitch_frontend_heavy_task(
+                    task_clean
+                )
+                if mode == "chat" and not detect_prerequisite_first_task(task_clean):
+                    if looks_like_build_task(task_clean) or stitch_heavy_for_routing:
+                        mode = "workflow"
+                        chat_reply = None
 
             if (
                 mode == "workflow"
@@ -2409,10 +2462,11 @@ No markdown, no other text."""
             live_reasoning_banner_build(task, mem_block)
 
             frontend_detected = detect_frontend_task(task_clean)
+            stitch_frontend_heavy = detect_stitch_frontend_heavy_task(task_clean)
             prereq_first = detect_prerequisite_first_task(task_clean)
             stitch_block = ""
             stitch_rules_extra = ""
-            if frontend_detected and STITCH_WEBSITE_RULES.strip():
+            if stitch_frontend_heavy and STITCH_WEBSITE_RULES.strip():
                 stitch_rules_extra = (
                     "\n\n## STITCH_WEBSITE rules (strict)\n"
                     + STITCH_WEBSITE_RULES
@@ -2422,6 +2476,7 @@ No markdown, no other text."""
             trace_done(
                 "Pipeline gating: "
                 f"mode={mode}, frontend_detected={frontend_detected}, "
+                f"stitch_frontend_heavy={stitch_frontend_heavy}, "
                 f"prerequisite_first={prereq_first}, stitch_feature_on={stitch_feature_on}, "
                 f"session_directive={session_directive or '(none)'}"
             )
@@ -2429,7 +2484,7 @@ No markdown, no other text."""
             if (
                 stitch_feature_on
                 and mode == "workflow"
-                and frontend_detected
+                and stitch_frontend_heavy
                 and (not prereq_first or session_directive == "build")
             ):
                 if should_skip_stitch_due_to_attachments(attach_block):

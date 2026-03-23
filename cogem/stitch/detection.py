@@ -71,6 +71,35 @@ def detect_frontend_task(text: str) -> bool:
     return False
 
 
+def detect_stitch_frontend_heavy_task(text: str) -> bool:
+    """
+    Return True only when the user explicitly requests "frontend-heavy" work
+    with known UI/JS/CSS toolchains (Tailwind, Three.js, GSAP, React, etc).
+
+    This is intentionally more conservative than detect_frontend_task so that
+    generic "build a website / landing page" is handled by Codex, while Stitch
+    is invoked when the user mentions specific frontend-heavy frameworks.
+    """
+    if not text or len(text.strip()) < 6:
+        return False
+    t = text.lower()
+
+    # Concrete frontend-heavy toolchain keywords.
+    heavy = (
+        r"\b(tailwind\s*css|tailwind|gsap|three\.?js|three\s*js|react(\s*\.js)?|next(\s*\.js)?|vue|svelte|angular|ember|"
+        r"nuxt|astro|remix|vite|webpack|rollup|swc|parcel|styled[-\s]?components|mui|material\s*ui|chakra\s*ui|daisyui|shadcn|"
+        r"tailwindui|framer\s*motion|web\s*components|lit\s*)\b"
+    )
+    if re.search(heavy, t, flags=re.I):
+        return True
+
+    # Also trigger when user explicitly asks for UI implementation in HTML/CSS/JS.
+    if re.search(r"\b(html\s*/\s*css|html\s*and\s*css|css\s*and\s*js|html\s*css\s*js|frontend\s*(app|ui))\b", t, re.I):
+        return True
+
+    return False
+
+
 def should_skip_stitch_due_to_attachments(attach_block: str) -> bool:
     """If @ mentions already include substantial HTML/CSS, skip redundant Stitch."""
     if not attach_block or len(attach_block) < 200:
