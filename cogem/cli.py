@@ -161,11 +161,13 @@ def main():
         from prompt_toolkit.completion import Completer
         from prompt_toolkit.history import InMemoryHistory
         from prompt_toolkit.shortcuts import CompleteStyle
+        from prompt_toolkit.styles import Style
     except ImportError:
         PromptSession = None
         Completer = None  # type: ignore
         CompleteStyle = None  # type: ignore
         InMemoryHistory = None  # type: ignore
+        Style = None  # type: ignore
 
     from cogem.stitch import (
         build_stitch_prompt,
@@ -954,14 +956,15 @@ __TASK__
         rest = (m.group(2) or "").strip()
         return rest, name
 
-    _SLASH_TASK_COMMANDS = (
-        "/build",
-        "/plan",
-        "/debug",
-        "/agent",
-        "/ask",
-        "/codex/model",
-        "/gemini/model",
+    # (command, right-column description) — Codex-style two-column completion menu
+    _SLASH_COMMANDS_META: Tuple[Tuple[str, str], ...] = (
+        ("/build", "Force full implementation pipeline (skip BUILD/CHAT router)"),
+        ("/plan", "Planning & milestones emphasis; router still classifies"),
+        ("/debug", "Debugging & root-cause focus for this turn"),
+        ("/agent", "Autonomous multi-step coding within your scope"),
+        ("/ask", "Chat only — no Codex/Gemini build loop this turn"),
+        ("/codex/model", "Show or set Codex LLM (draft + improve)"),
+        ("/gemini/model", "Show or set Gemini LLM (review + summary)"),
     )
     _MAX_AT_COMPLETIONS = 500
 
@@ -1072,12 +1075,18 @@ __TASK__
                     for rel in rels[:_MAX_AT_COMPLETIONS]:
                         if quoted:
                             text = '"' + rel + '"'
+                            disp = text
                         else:
                             text = rel
-                        meta = "dir" if rel.endswith("/") else "file"
+                            disp = rel
+                        if rel.endswith("/"):
+                            meta = "Folder — @ attaches a directory listing in BUILD prompts"
+                        else:
+                            meta = "File — @ attaches file contents in BUILD prompts"
                         yield Completion(
                             text,
                             start_position=-len(seg_replace),
+                            display=disp,
                             display_meta=meta,
                         )
                     return
@@ -1086,23 +1095,49 @@ __TASK__
                 if sp is None:
                     return
                 if sp == "" and not before.strip():
-                    for cmd in _SLASH_TASK_COMMANDS:
-                        yield Completion(cmd, start_position=0)
+                    for cmd, desc in _SLASH_COMMANDS_META:
+                        yield Completion(
+                            cmd,
+                            start_position=0,
+                            display=cmd,
+                            display_meta=desc,
+                        )
                     return
                 slash_start = before.find("/")
                 if slash_start < 0:
                     return
                 replace_len = len(before) - slash_start
-                for cmd in _SLASH_TASK_COMMANDS:
+                for cmd, desc in _SLASH_COMMANDS_META:
                     if sp and not cmd.startswith(sp):
                         continue
-                    yield Completion(cmd, start_position=-replace_len)
+                    yield Completion(
+                        cmd,
+                        start_position=-replace_len,
+                        display=cmd,
+                        display_meta=desc,
+                    )
+
+        _completion_style = (
+            Style.from_dict(
+                {
+                    # Dark menu like Codex CLI: blue command column, grey description column
+                    "completion-menu": "bg:#000000",
+                    "completion-menu.completion": "fg:#5eb8ff",
+                    "completion-menu.completion.current": "fg:#8ed0ff bg:#2d3d52",
+                    "completion-menu.meta.completion": "fg:#b8b8b8",
+                    "completion-menu.meta.completion.current": "fg:#e0e0e0 bg:#2d3d52",
+                }
+            )
+            if Style is not None
+            else None
+        )
 
         task_prompt_session = PromptSession(
             completer=CogemCompleter(),
             history=InMemoryHistory(),
             complete_while_typing=True,
             complete_style=CompleteStyle.COLUMN,
+            style=_completion_style,
         )
 
     def read_task_line(prompt: str = "What would you like to do? ") -> str:
