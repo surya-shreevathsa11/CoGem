@@ -365,6 +365,36 @@ While Cogem is running, you can change models without restarting:
 | `/github/info <url or owner/repo>` | Show public GitHub repository metadata (description, stars, language, branch) |
 | `/github/clone <url or owner/repo> [dest]` | Clone repository into local folder (`dest` optional) |
 
+---
+## Automated Validation Loop (Execution)
+
+When you use `/build`, cogem now attempts to "close the loop" by running the detected repo checks and feeding failures back into Codex for a second pass.
+
+- It runs the detected test command (Python: `python -m pytest`, Node: `npm test`).
+- It runs the detected lint command when available (Python: `ruff` or `flake8`; Node: `npm run lint`/`npm run eslint`).
+- If `tsconfig.json` exists in a Node repo, it also runs `npx tsc --noEmit` (best-effort).
+- Safety: it executes these checks inside a temporary copy of your repo to reduce the risk of host file deletion.
+- The loop stops after `COGEM_VALIDATION_MAX_ATTEMPTS` (default `2`) attempts.
+
+### Docker-Preferred, Fallback to Sandbox
+
+By default, validation uses the filesystem sandbox (fast, zero Docker setup).
+
+If you want Docker validation (preferred when available), enable it explicitly:
+- CLI: `cogem --validation-docker`
+- Env: `COGEM_VALIDATION_DOCKER=yes`
+
+Strict mode:
+- If `COGEM_STRICT_SANDBOX=1` and Docker is not available, cogem **skips validation** (so you keep zero-friction behavior).
+
+Docker base images:
+- Python: `python:3.12-slim` (override with `COGEM_DOCKER_PY_IMAGE`)
+- Node: `node:20-slim` (override with `COGEM_DOCKER_NODE_IMAGE`)
+
+### Faster Filesystem Sandbox
+
+To avoid copying huge projects, the sandbox copies **only git-tracked files** (falls back to a conservative full copy if the repo is not a git checkout).
+
 ### Session directives (task mode)
 
 Prefix the **first line** of your message with one of these. They stack with `@` mentions (attachments load into the build context when you end up in BUILD).
@@ -433,6 +463,11 @@ There is **no guaranteed public Stitch API** in cogem: integration is **pluggabl
 | `COGEM_CODEX_MODEL` | Default Codex LLM ID when `--codex-model` is not passed |
 | `COGEM_GEMINI_MODEL` | Default Gemini LLM ID when `--gemini-model` is not passed |
 | `COGEM_SUBPROCESS_TIMEOUT_SEC` | Integer seconds; abort a stuck `codex` / `gemini` subprocess after this time |
+| `COGEM_VALIDATION_DOCKER` | `yes` / `no` — prefer Docker-based validation backend (tests/lint/typecheck). See `--validation-docker` |
+| `COGEM_STRICT_SANDBOX` | `1` / `0` — when `1`, require Docker for validation; if Docker is missing, cogem skips validation |
+| `COGEM_DOCKER_PY_IMAGE` | Docker image for Python validation (default `python:3.12-slim`) |
+| `COGEM_DOCKER_NODE_IMAGE` | Docker image for Node validation (default `node:20-slim`) |
+| `COGEM_VALIDATION_MAX_ATTEMPTS` | Max automated validation iterations for `/build` (default `2`) |
 | `COGEM_AT_MAX_FILE_BYTES` | Max bytes read per `@` file (default `400000`) |
 | `COGEM_AT_MAX_TOTAL_CHARS` | Max total characters for all `@` attachments in one turn (default `120000`) |
 | `COGEM_AT_MAX_PDF_PAGES` | Max pages extracted from a PDF `@` mention (default `30`) |

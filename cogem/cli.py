@@ -227,12 +227,29 @@ def main():
             "Disable the Google Stitch stage for UI-heavy tasks (see COGEM_STITCH env)."
         ),
     )
+    _ap.add_argument(
+        "--validation-docker",
+        action="store_true",
+        help=(
+            "Prefer Docker-based validation (tests/lint/typecheck) when available, "
+            "fallback to the tempfile filesystem sandbox otherwise."
+        ),
+    )
     _args = _ap.parse_args()
     _codex_model = (_args.codex_model or os.environ.get("COGEM_CODEX_MODEL") or "").strip() or None
     _gemini_model = (_args.gemini_model or os.environ.get("COGEM_GEMINI_MODEL") or "").strip() or None
     stitch_feature_on = (not _args.no_stitch) and (
         (os.environ.get("COGEM_STITCH") or "1").strip().lower()
         not in ("0", "false", "no", "off", "disabled")
+    )
+
+    validation_docker_requested = bool(_args.validation_docker) or (
+        os.environ.get("COGEM_VALIDATION_DOCKER", "").strip().lower()
+        in ("1", "true", "yes", "on")
+    )
+    require_docker_for_validation = (
+        os.environ.get("COGEM_STRICT_SANDBOX", "").strip().lower()
+        in ("1", "true", "yes", "on")
     )
 
     if not boot_sequence():
@@ -1099,6 +1116,332 @@ def main():
                 return "python -m flake8 ."
             return None
         return None
+
+    def _select_typecheck_cmd() -> Optional[str]:
+        """Best-effort: run TypeScript typecheck when tsconfig exists."""
+        kind = _detect_repo_kind()
+        if kind != "node":
+            return None
+        if _repo_has("tsconfig.json"):
+            return "npx tsc --noEmit"
+        return None
+
+    def _run_local_command_in_cwd(
+        cmd_raw: str, label: str, cwd: str
+    ) -> Tuple[int, str, str]:
+        """
+        Same allowlist + permission rules as _run_local_command, but executes
+        inside provided cwd (used for sandboxed validation).
+        """
+        ensure_run_permissions()
+        if not run_permissions.get("granted"):
+            return 1, "", "Local command execution denied by user permission."
+        if not cmd_raw or not cmd_raw.strip():
+            return 1, "", "Empty command."
+        if _contains_shell_operators(cmd_raw):
+            return 1, "", "Command rejected: compound shell syntax is not allowed."
+
+        args = _shlex_split_cmd(cmd_raw.strip())
+        if not args:
+            return 1, "", "Empty command."
+        exe_name = os.path.basename(args[0])
+        if exe_name not in _RUN_ALLOW_EXECUTABLES:
+            allow = ", ".join(sorted(_RUN_ALLOW_EXECUTABLES))
+            return 1, "", f"Executable not allowed: {exe_name}. Allowed: {allow}"
+
+        proc = _run_proc(args, cwd=cwd)
+        return proc.returncode, proc.stdout or "", proc.stderr or ""
+
+    def _sandbox_copy_repo_for_validation() -> Tuple[str, str]:
+        """
+        Create a temp copy of the repo and run tests there.
+        This reduces risk of generated test code deleting/mutating host files.
+        """
+        import tempfile
+
+        src = _repo_root()
+        sandbox_root = tempfile.mkdtemp(prefix="cogem-validate-")
+        include_node_modules = (
+            os.environ.get("COGEM_SANDBOX_INCLUDE_NODE_MODULES", "").strip().lower()
+            in ("1", "true", "yes", "on")
+        )
+
+        # Fast path: copy only git-tracked files (near-instant for large repos).
+        try:
+            from cogem.validation import copy_git_tracked_repo_to_sandbox
+
+            used_git, _copied = copy_git_tracked_repo_to_sandbox(
+                src,
+                sandbox_root,
+                extra_ignore_prefixes=(
+                    "node_modules/",
+                    ".git/",
+                )
+                if not include_node_modules
+                else (".git/",),
+            )
+            if used_git:
+                return sandbox_root, src
+        except Exception:
+            # If anything goes wrong, fall back to a safer full copy below.
+            pass
+
+        # Fallback: full copy with an ignore list (slower, but robust).
+        ignore_dirs = [
+            ".git",
+            "__pycache__",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            ".tox",
+            ".venv",
+            "dist",
+            "build",
+            ".cursor-server",
+        ]
+        if not include_node_modules:
+            ignore_dirs.append("node_modules")
+
+        ignore_patterns = list(ignore_dirs)
+
+        def _ignore(_dirpath: str, names: list[str]) -> set[str]:
+            return {n for n in names if n in ignore_patterns}
+
+        shutil.copytree(src, sandbox_root, ignore=_ignore, dirs_exist_ok=False)
+        return sandbox_root, src
+
+    def _normalize_sandbox_paths(text: str, sandbox_root: str) -> str:
+        if not text:
+            return ""
+        return text.replace(sandbox_root + os.sep, "")
+
+    def _docker_available() -> bool:
+        if shutil.which("docker") is None:
+            return False
+        try:
+            proc = subprocess.run(
+                ["docker", "version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return proc.returncode == 0
+        except Exception:
+            return False
+
+    def _docker_run_tokens(
+        image: str, tokens: List[str], *, sandbox_root: str
+    ) -> Tuple[int, str, str]:
+        to = _subprocess_timeout_sec()
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{os.path.abspath(sandbox_root)}:/repo",
+            "-w",
+            "/repo",
+            image,
+        ] + tokens
+        try:
+            kw = {"capture_output": True, "text": True}
+            if to is not None:
+                kw["timeout"] = to
+            proc = subprocess.run(cmd, **kw)
+            return proc.returncode, proc.stdout or "", proc.stderr or ""
+        except subprocess.TimeoutExpired:
+            return 1, "", "docker command timed out"
+        except OSError as e:
+            return 1, "", f"docker command failed: {e}"
+
+    def _docker_validate_cmd_tokens(cmd_raw: str) -> Optional[List[str]]:
+        """
+        Enforce the same safety rules as local execution:
+        - no shell operators
+        - executable must be allowlisted
+        """
+        if _contains_shell_operators(cmd_raw):
+            return None
+        args = _shlex_split_cmd(cmd_raw.strip())
+        if not args:
+            return None
+        exe_name = os.path.basename(args[0])
+        if exe_name not in _RUN_ALLOW_EXECUTABLES:
+            return None
+        return args
+
+    def _docker_install_deps_if_needed(repo_kind: str, sandbox_root: str) -> str:
+        """
+        Best-effort dependency install inside container so tests/lint can run.
+        Returns a short feedback string (empty if nothing to do).
+        """
+        py_image = os.environ.get("COGEM_DOCKER_PY_IMAGE", "python:3.12-slim").strip()
+        node_image = (
+            os.environ.get("COGEM_DOCKER_NODE_IMAGE", "node:20-slim").strip()
+        )
+
+        if repo_kind == "node":
+            image = node_image
+            if os.path.isfile(os.path.join(sandbox_root, "package-lock.json")):
+                tokens = ["npm", "ci"]
+            elif os.path.isfile(os.path.join(sandbox_root, "package.json")):
+                tokens = ["npm", "install"]
+            else:
+                return ""
+        elif repo_kind == "python":
+            image = py_image
+            req = os.path.join(sandbox_root, "requirements.txt")
+            if os.path.isfile(req):
+                tokens = ["pip", "install", "-r", "requirements.txt"]
+            elif (
+                os.path.isfile(os.path.join(sandbox_root, "pyproject.toml"))
+                or os.path.isfile(os.path.join(sandbox_root, "setup.py"))
+            ):
+                # Generic fallback: install the repo itself.
+                tokens = ["pip", "install", "."]
+            else:
+                return ""
+        else:
+            return ""
+
+        rc, out, err = _docker_run_tokens(
+            image, tokens, sandbox_root=sandbox_root
+        )
+        if rc != 0:
+            return f"Dependency install failed (rc={rc}):\n{(err or out).strip()[:4000]}"
+        return ""
+
+    def _run_validation_suite_docker() -> Tuple[bool, str]:
+        test_cmd = _select_test_cmd()
+        lint_cmd = _select_lint_cmd()
+        typecheck_cmd = _select_typecheck_cmd()
+
+        if not (test_cmd or lint_cmd or typecheck_cmd):
+            return True, "No known test/lint/typecheck commands for this repo."
+
+        repo_kind = _detect_repo_kind()
+        sandbox_root, _src = _sandbox_copy_repo_for_validation()
+
+        try:
+            combined_parts: List[str] = []
+            ok = True
+
+            if repo_kind == "node":
+                image = (
+                    os.environ.get("COGEM_DOCKER_NODE_IMAGE", "node:20-slim").strip()
+                )
+            else:
+                image = (
+                    os.environ.get("COGEM_DOCKER_PY_IMAGE", "python:3.12-slim").strip()
+                )
+
+            dep_feedback = _docker_install_deps_if_needed(repo_kind, sandbox_root)
+            if dep_feedback.strip():
+                ok = False
+                combined_parts.append(dep_feedback)
+
+            for cmd, label in (
+                (test_cmd, "tests"),
+                (lint_cmd, "lint"),
+                (typecheck_cmd, "typecheck"),
+            ):
+                if not cmd:
+                    continue
+                tokens = _docker_validate_cmd_tokens(cmd)
+                if not tokens:
+                    ok = False
+                    combined_parts.append(
+                        f"\n--- COMMAND: {label} ---\n$ {cmd}\n"
+                        "Rejected by sandbox/allowlist rules."
+                    )
+                    continue
+                rc, out, err = _docker_run_tokens(
+                    image, tokens, sandbox_root=sandbox_root
+                )
+                if rc != 0:
+                    ok = False
+                combined_parts.append(
+                    f"\n--- COMMAND: {label} ---\n$ {cmd}\n"
+                    f"rc={rc}\n"
+                    f"stdout:\n{(out or '').strip()}\n"
+                    f"stderr:\n{(err or '').strip()}\n"
+                )
+
+            feedback = "\n".join(combined_parts).strip()
+            feedback = _normalize_sandbox_paths(feedback, sandbox_root)
+            if len(feedback) > 12000:
+                feedback = feedback[:11990] + "\n...[truncated]"
+            return ok, feedback or "Validation ran but produced no output."
+        finally:
+            try:
+                shutil.rmtree(sandbox_root, ignore_errors=True)
+            except Exception:
+                pass
+
+    def _run_validation_suite() -> Tuple[bool, str]:
+        """
+        Run test + lint + optional typecheck using either:
+        - Docker (preferred when explicitly requested)
+        - Temp filesystem sandbox (fast, no setup)
+
+        Returns (ok, combined_feedback).
+        """
+        test_cmd = _select_test_cmd()
+        lint_cmd = _select_lint_cmd()
+        typecheck_cmd = _select_typecheck_cmd()
+
+        if not (test_cmd or lint_cmd or typecheck_cmd):
+            return True, "No known test/lint/typecheck commands for this repo."
+
+        docker_ok = _docker_available()
+        if require_docker_for_validation:
+            if not docker_ok:
+                trace_done(
+                    "Validation: strict sandbox requested but Docker is unavailable; skipping validation."
+                )
+                return True, "Validation skipped: Docker required (COGEM_STRICT_SANDBOX=1) but not available."
+            trace_done("Validation: using Docker backend (strict).")
+            return _run_validation_suite_docker()
+
+        if validation_docker_requested and docker_ok:
+            trace_done("Validation: using Docker backend (requested).")
+            return _run_validation_suite_docker()
+
+        trace_done("Validation: using temp filesystem sandbox backend.")
+        sandbox_root, _src = _sandbox_copy_repo_for_validation()
+        try:
+            combined_parts: List[str] = []
+            ok = True
+
+            for cmd, label in (
+                (test_cmd, "tests"),
+                (lint_cmd, "lint"),
+                (typecheck_cmd, "typecheck"),
+            ):
+                if not cmd:
+                    continue
+                rc, out, err = _run_local_command_in_cwd(
+                    cmd, label=label, cwd=sandbox_root
+                )
+                if rc != 0:
+                    ok = False
+                combined_parts.append(
+                    f"\n--- COMMAND: {label} ---\n$ {cmd}\n"
+                    f"rc={rc}\n"
+                    f"stdout:\n{(out or '').strip()}\n"
+                    f"stderr:\n{(err or '').strip()}\n"
+                )
+
+            feedback = "\n".join(combined_parts).strip()
+            feedback = _normalize_sandbox_paths(feedback, sandbox_root)
+            if len(feedback) > 12000:
+                feedback = feedback[:11990] + "\n...[truncated]"
+            return ok, feedback or "Validation ran but produced no output."
+        finally:
+            try:
+                shutil.rmtree(sandbox_root, ignore_errors=True)
+            except Exception:
+                pass
 
     def _codex_argv(prompt: str) -> List[str]:
         """codex exec with flags that avoid failing outside a git repo / trusted tree."""
@@ -2699,8 +3042,18 @@ No markdown, no other text."""
             trace_doing(
                 "I'm calling Codex with your task, CODEX.md rules, and any saved memory so I can get a first implementation pass."
             )
+            tdd_extra_hint = ""
+            if session_directive == "build":
+                tdd_extra_hint = (
+                    "\n\n## Automated validation loop (test-driven refinement)\n"
+                    "Because the user asked for /build, you MUST write tests (create/update) when possible, "
+                    "run them mentally (expect failures initially), and then implement fixes so that the repository's "
+                    "detected test command passes.\n"
+                    "When returning output for a project, use FILE: blocks for all changes.\n"
+                )
             raw, draft_err, draft_rc = run_codex(
-                f"{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}\n\nTASK:\n{task_clean}\n",
+                f"{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}"
+                f"{tdd_extra_hint}\n\nTASK:\n{task_clean}\n",
                 "Codex: drafting initial implementation...",
             )
             if draft_rc != 0:
@@ -2740,6 +3093,88 @@ No markdown, no other text."""
                 console.print()
                 run_written_artifacts(files)
                 console.print()
+
+                # ---------- validation loop (close the loop) ----------
+                if session_directive == "build":
+                    max_attempts = 2
+                    try:
+                        max_attempts = max(
+                            1, int(os.environ.get("COGEM_VALIDATION_MAX_ATTEMPTS", "2"))
+                        )
+                    except ValueError:
+                        max_attempts = 2
+
+                    validated = False
+                    attempt = 1
+                    while attempt <= max_attempts and not validated:
+                        console.print(
+                            Text(
+                                f"[cogem] Validation attempt {attempt}/{max_attempts} (tests + lint + typecheck) ...",
+                                style=MUTED,
+                            )
+                        )
+                        ok, feedback = _run_validation_suite()
+                        if ok:
+                            validated = True
+                            trace_done("Validation suite passed in sandbox.")
+                            break
+
+                        trace_done(
+                            "Validation suite failed; feeding failure output to Codex for a second pass."
+                        )
+                        section_rule("Review Feedback (validation failures)")
+                        console.print(Text(feedback[:4000], style=LOG_WARN))
+                        console.print()
+
+                        if attempt >= max_attempts:
+                            trace_done("Max validation attempts reached; proceeding to summary.")
+                            break
+
+                        # Ask Codex to fix the project so checks pass.
+                        fix_prompt = f"""
+{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}
+
+TASK:
+{task_clean}
+
+Review Feedback (from automated validation):
+{feedback}
+
+Fix the project so the test/lint/typecheck commands pass.
+Return ONLY FILE: blocks (add/update files as needed).
+"""
+                        improved_raw, imp_err, imp_rc = run_codex(
+                            fix_prompt, "Codex: fixing via validation feedback..."
+                        )
+                        if imp_rc != 0:
+                            console.print(
+                                Text(
+                                    f"[cogem] WARNING: Codex validation-fix exited with code {imp_rc}.",
+                                    style=LOG_WARN,
+                                )
+                            )
+                            break
+                        improved_files = extract_files(improved_raw)
+                        if not improved_files:
+                            console.print(
+                                Text(
+                                    "[cogem] WARNING: No FILE: blocks returned from Codex fix pass.",
+                                    style=LOG_WARN,
+                                )
+                            )
+                            break
+
+                        console.print()
+                        trace_doing(
+                            f"Writing {len(improved_files)} file(s) from Codex validation-fix pass ..."
+                        )
+                        write_files(improved_files)
+                        console.print()
+                        run_written_artifacts(improved_files)
+                        console.print()
+
+                        attempt += 1
+
                 trace_done(
                     "Files and any auto-runs are done; I'm asking Codex to fold this project into long-lived memory next."
                 )
