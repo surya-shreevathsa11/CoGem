@@ -357,6 +357,10 @@ While Cogem is running, you can change models without restarting:
 | `/gemini/model` | Show Gemini LLM (`gemini -m`), this session, and startup default |
 | `/gemini/model <MODEL_ID>` | Use that ID for **all Gemini** calls this session |
 | `/gemini/model reset` | Restore Gemini model from `--gemini-model` / `COGEM_GEMINI_MODEL` |
+| `/repo/info` | Show repo info (git root, branch, last commit, status) |
+| `/test` | Run project tests (best-effort; Python or Node) |
+| `/lint` | Run project lint (best-effort; Python or Node) |
+| `/run <cmd>` | Run a local command (requires permission; allowlist enforced) |
 | `/github/info <url or owner/repo>` | Show public GitHub repository metadata (description, stars, language, branch) |
 | `/github/clone <url or owner/repo> [dest]` | Clone repository into local folder (`dest` optional) |
 
@@ -423,6 +427,7 @@ There is **no guaranteed public Stitch API** in cogem: integration is **pluggabl
 | Variable | Purpose |
 |----------|---------|
 | `COGEM_AUTO_PERMISSIONS` | `yes` / `no` — skip the interactive prompt for Codex `--full-auto` and Gemini `--yolo` |
+| `COGEM_ALLOW_LOCAL_COMMANDS` | `yes` / `no` — allow local command execution for `/run`, `/test`, `/lint`, and `/github/clone` |
 | `COGEM_CODEX_WORKDIR` | Absolute path passed to Codex `-C` (workspace root) |
 | `COGEM_CODEX_MODEL` | Default Codex LLM ID when `--codex-model` is not passed |
 | `COGEM_GEMINI_MODEL` | Default Gemini LLM ID when `--gemini-model` is not passed |

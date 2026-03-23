@@ -256,6 +256,8 @@ def main():
     session_tokens = {"codex": 0, "gemini": 0}
     # None = not asked yet; True/False = user chose whether to pass Codex --full-auto and Gemini --yolo.
     auto_permissions: dict = {"granted": None}
+    # None = not asked yet; True/False = user chose whether cogem can execute local shell commands (/run, /test, /lint, /github/clone).
+    run_permissions: dict = {"granted": None}
     # Effective LLM IDs for this process (separate per backend); from CLI/env, change with /codex/model and /gemini/model.
     models: dict = {"codex": _codex_model, "gemini": _gemini_model}
 
@@ -925,6 +927,178 @@ def main():
                 )
             )
 
+    def _run_permissions_from_env() -> Optional[bool]:
+        raw = os.environ.get("COGEM_ALLOW_LOCAL_COMMANDS", "").strip().lower()
+        if raw in ("1", "y", "yes", "true", "on"):
+            return True
+        if raw in ("0", "n", "no", "false", "off"):
+            return False
+        return None
+
+    def ensure_run_permissions() -> None:
+        """
+        Ask once per session before running local commands (/run, /test, /lint, /github/clone).
+        """
+        if run_permissions["granted"] is not None:
+            return
+        v = _run_permissions_from_env()
+        if v is not None:
+            run_permissions["granted"] = v
+            return
+        if not sys.stdin.isatty():
+            run_permissions["granted"] = False
+            console.print(
+                Text(
+                    "[cogem] Non-interactive stdin: not prompting to run local commands. "
+                    "Set COGEM_ALLOW_LOCAL_COMMANDS=yes to enable.",
+                    style=LOG_WARN,
+                )
+            )
+            return
+        console.print()
+        console.print(
+            Text(
+                "Local tools (/run, /test, /lint, /github/clone) may execute commands on your machine. "
+                "Allow that for this cogem session?",
+                style=MUTED,
+            )
+        )
+        ans = console.input(Text("Allow local commands? [y/N]: ", style=TITLE)).strip().lower()
+        run_permissions["granted"] = ans in ("y", "yes")
+        if not run_permissions["granted"]:
+            console.print(
+                Text(
+                    "Continuing with no local command execution. Use /ask or code-only turns instead.",
+                    style=LOG_WARN,
+                )
+            )
+
+    def _shlex_split_cmd(raw: str) -> List[str]:
+        import shlex
+        return shlex.split(raw, posix=os.name != "nt")
+
+    def _contains_shell_operators(raw: str) -> bool:
+        # Reject compound shell syntax to avoid injection when shell=False.
+        forbidden = ("&&", "||", ";", "|", ">", "<", "`", "$(", "\n", "\r")
+        return any(x in raw for x in forbidden)
+
+    def _repo_root() -> str:
+        # Prefer git to find a stable workspace root.
+        try:
+            proc = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                capture_output=True,
+                text=True,
+                cwd=os.getcwd(),
+            )
+            if proc.returncode == 0 and (proc.stdout or "").strip():
+                return proc.stdout.strip()
+        except Exception:
+            pass
+        return os.getcwd()
+
+    _RUN_ALLOW_EXECUTABLES = {
+        "git",
+        "python",
+        "python3",
+        "pytest",
+        "ruff",
+        "flake8",
+        "black",
+        "mypy",
+        "node",
+        "npm",
+        "npx",
+        "yarn",
+        "pnpm",
+        "go",
+        "golangci-lint",
+        "cargo",
+        "make",
+        "bash",
+        "sh",
+    }
+
+    def _run_local_command(cmd_raw: str, label: str) -> Tuple[int, str, str]:
+        ensure_run_permissions()
+        if not run_permissions.get("granted"):
+            return 1, "", "Local command execution denied by user permission."
+        if not cmd_raw or not cmd_raw.strip():
+            return 1, "", "Empty command."
+        if _contains_shell_operators(cmd_raw):
+            return 1, "", "Command rejected: compound shell syntax is not allowed."
+
+        args = _shlex_split_cmd(cmd_raw.strip())
+        if not args:
+            return 1, "", "Empty command."
+        exe = args[0]
+        exe_name = os.path.basename(exe)
+        if exe_name not in _RUN_ALLOW_EXECUTABLES:
+            allow = ", ".join(sorted(_RUN_ALLOW_EXECUTABLES))
+            return 1, "", f"Executable not allowed: {exe_name}. Allowed: {allow}"
+
+        proc = _run_proc(args, cwd=_repo_root())
+        return proc.returncode, proc.stdout or "", proc.stderr or ""
+
+    def _read_json_file(path: str) -> Optional[dict]:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+
+    def _repo_has(rel_path: str) -> bool:
+        return os.path.isfile(os.path.join(_repo_root(), rel_path))
+
+    def _repo_has_dir(rel_path: str) -> bool:
+        return os.path.isdir(os.path.join(_repo_root(), rel_path))
+
+    def _detect_repo_kind() -> str:
+        if _repo_has("package.json"):
+            return "node"
+        if _repo_has("pyproject.toml") or _repo_has("requirements.txt") or _repo_has("setup.cfg"):
+            return "python"
+        return "unknown"
+
+    def _select_node_script(package_json: dict, key: str) -> Optional[str]:
+        scripts = package_json.get("scripts")
+        if not isinstance(scripts, dict):
+            return None
+        v = scripts.get(key)
+        if isinstance(v, str) and v.strip():
+            return key
+        return None
+
+    def _select_test_cmd() -> Optional[str]:
+        kind = _detect_repo_kind()
+        if kind == "node":
+            pj = _read_json_file(os.path.join(_repo_root(), "package.json")) or {}
+            if _select_node_script(pj, "test"):
+                return "npm run test"
+            return "npm test"
+        if kind == "python":
+            # Best-effort: use python -m pytest so it works even without a global pytest script.
+            return "python -m pytest"
+        return None
+
+    def _select_lint_cmd() -> Optional[str]:
+        kind = _detect_repo_kind()
+        if kind == "node":
+            pj = _read_json_file(os.path.join(_repo_root(), "package.json")) or {}
+            if _select_node_script(pj, "lint"):
+                return "npm run lint"
+            if _select_node_script(pj, "eslint"):
+                return "npm run eslint"
+            return None
+        if kind == "python":
+            # Choose ruff first if available.
+            if shutil.which("ruff"):
+                return "python -m ruff check ."
+            if shutil.which("flake8"):
+                return "python -m flake8 ."
+            return None
+        return None
+
     def _codex_argv(prompt: str) -> List[str]:
         """codex exec with flags that avoid failing outside a git repo / trusted tree."""
         argv = ["codex", "exec", "--skip-git-repo-check"]
@@ -1121,6 +1295,10 @@ __TASK__
         ("/ask", "Chat only — no Codex/Gemini build loop this turn"),
         ("/codex/model", "Show or set Codex LLM (draft + improve)"),
         ("/gemini/model", "Show or set Gemini LLM (review + summary)"),
+        ("/repo/info", "Show repo info (git status, branch, last commit)"),
+        ("/test", "Run project tests (best-effort; Python or Node)"),
+        ("/lint", "Run project lint (best-effort; Python or Node)"),
+        ("/run", "Run a local command (permission + allowlist enforced)"),
         ("/github/info", "Inspect public GitHub repository details"),
         ("/github/clone", "Clone a GitHub repo into current directory"),
     )
@@ -1332,6 +1510,14 @@ __TASK__
                 event.current_buffer.insert_text("\n")
                 return
             event.current_buffer.validate_and_handle()
+
+        @_task_prompt_keys.add("s-tab")
+        def _shift_tab_handler(event):
+            # Shift+Tab cycles completions backwards (command/path dropdown).
+            try:
+                event.current_buffer.complete_previous()
+            except Exception:
+                pass
 
         task_prompt_session = PromptSession(
             completer=CogemCompleter(),
@@ -1766,6 +1952,8 @@ No markdown, no other text."""
                         "Session: /build /plan /debug /agent /ask   "
                         "/codex/model <MODEL_ID|reset>   "
                         "/gemini/model <MODEL_ID|reset>   "
+                        "/repo/info /test /lint   "
+                        "/run <cmd>   "
                         "/github/info <url|owner/repo>   "
                         "/github/clone <url|owner/repo> [dest]   "
                         "@path @folder   (Tab completes / and @)",
@@ -1880,6 +2068,109 @@ No markdown, no other text."""
                 console.print(Text(f"Gemini LLM set to: {rest}", style=TITLE))
                 continue
 
+            if task.startswith("/repo/info"):
+                root = _repo_root()
+                console.print()
+                section_rule("Repo info")
+                console.print()
+                console.print(Text(f"Repo root: {root}", style=MUTED))
+                try:
+                    proc_inside = subprocess.run(
+                        ["git", "rev-parse", "--is-inside-work-tree"],
+                        capture_output=True,
+                        text=True,
+                        cwd=root,
+                    )
+                    inside = (proc_inside.stdout or "").strip().lower() == "true"
+                except Exception:
+                    inside = False
+                if not inside:
+                    console.print(Text("Git: not a git repository (or git unavailable).", style=LOG_WARN))
+                    console.print()
+                    continue
+                try:
+                    proc_branch = subprocess.run(
+                        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                        capture_output=True,
+                        text=True,
+                        cwd=root,
+                    )
+                    branch = (proc_branch.stdout or "").strip() or "(unknown)"
+                    console.print(Text(f"Git branch: {branch}", style=MUTED))
+                except Exception:
+                    pass
+                try:
+                    proc_last = subprocess.run(
+                        ["git", "log", "-1", "--oneline"],
+                        capture_output=True,
+                        text=True,
+                        cwd=root,
+                    )
+                    last = (proc_last.stdout or "").strip()
+                    if last:
+                        console.print(Text(f"Last commit: {last}", style=MUTED))
+                except Exception:
+                    pass
+                try:
+                    proc_status = subprocess.run(
+                        ["git", "status", "--porcelain"],
+                        capture_output=True,
+                        text=True,
+                        cwd=root,
+                    )
+                    status = (proc_status.stdout or "").strip()
+                    console.print(Text("Working tree status (git --porcelain):", style=MUTED))
+                    console.print(status or "(clean)")
+                except Exception:
+                    pass
+                console.print()
+                continue
+
+            if task.startswith("/test"):
+                cmd = _select_test_cmd()
+                console.print()
+                section_rule("Tests")
+                if not cmd:
+                    console.print(Text("No known test command for this repo type.", style=LOG_WARN))
+                    console.print()
+                    continue
+                rc, out, err = _run_local_command(cmd, "tests")
+                if out.strip():
+                    console.print(out.strip())
+                if rc != 0 and (err or "").strip():
+                    console.print(Text(err.strip()[:2000], style=LOG_WARN))
+                continue
+
+            if task.startswith("/lint"):
+                cmd = _select_lint_cmd()
+                console.print()
+                section_rule("Lint")
+                if not cmd:
+                    console.print(Text("No known lint command for this repo type.", style=LOG_WARN))
+                    console.print()
+                    continue
+                rc, out, err = _run_local_command(cmd, "lint")
+                if out.strip():
+                    console.print(out.strip())
+                if rc != 0 and (err or "").strip():
+                    console.print(Text(err.strip()[:2000], style=LOG_WARN))
+                continue
+
+            if task.startswith("/run"):
+                rest = task[len("/run"):].strip()
+                if not rest:
+                    console.print(Text("Usage: /run <command + args>", style=MUTED))
+                    continue
+                rc, out, err = _run_local_command(rest, "run")
+                console.print()
+                section_rule("Command output")
+                if out.strip():
+                    console.print(out.strip())
+                if (err or "").strip():
+                    console.print(Text((err or "").strip()[:2000], style=LOG_WARN))
+                console.print()
+                continue
+
             if task.startswith("/github/info"):
                 rest = task[len("/github/info"):].strip()
                 if not rest:
@@ -1916,6 +2207,11 @@ No markdown, no other text."""
                 target_dir = dest or repo
                 if os.path.lexists(target_dir):
                     console.print(Text(f"Target already exists: {target_dir}", style=LOG_WARN))
+                    continue
+                ensure_run_permissions()
+                if not run_permissions.get("granted"):
+                    console.print(Text("Local command execution denied by user permission.", style=LOG_WARN))
+                    console.print()
                     continue
                 proc = _run_with_ascii_progress(
                     "git clone",
@@ -2113,6 +2409,7 @@ No markdown, no other text."""
             live_reasoning_banner_build(task, mem_block)
 
             frontend_detected = detect_frontend_task(task_clean)
+            prereq_first = detect_prerequisite_first_task(task_clean)
             stitch_block = ""
             stitch_rules_extra = ""
             if frontend_detected and STITCH_WEBSITE_RULES.strip():
@@ -2122,11 +2419,18 @@ No markdown, no other text."""
                     + "\n"
                 )
 
+            trace_done(
+                "Pipeline gating: "
+                f"mode={mode}, frontend_detected={frontend_detected}, "
+                f"prerequisite_first={prereq_first}, stitch_feature_on={stitch_feature_on}, "
+                f"session_directive={session_directive or '(none)'}"
+            )
+
             if (
                 stitch_feature_on
                 and mode == "workflow"
                 and frontend_detected
-                and not detect_prerequisite_first_task(task_clean)
+                and (not prereq_first or session_directive == "build")
             ):
                 if should_skip_stitch_due_to_attachments(attach_block):
                     trace_done(
@@ -2162,8 +2466,11 @@ No markdown, no other text."""
                         console.print()
                         console.print(
                             Text(
-                                "Export HTML/CSS (or bundled frontend) from Stitch. Then paste below, "
-                                "or type a line with @path/to/file.html — Enter to skip.",
+                                "Stitch manual fallback.\n"
+                                "1) In Stitch, export the generated frontend (HTML/CSS, or a bundled HTML that includes styles).\n"
+                                "2) Paste it below (preferred: the main HTML, plus any CSS/JS it depends on).\n"
+                                "3) Or provide `@path/to/export.html` / `@path/to/export.css`.\n"
+                                "Press Enter on an empty line to skip.",
                                 style=MUTED,
                             )
                         )
