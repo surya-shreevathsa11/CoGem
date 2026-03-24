@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from typing import Any, Dict, List, Set, Tuple
 
@@ -41,6 +42,99 @@ def _copy_to_clipboard(text: str) -> bool:
         return False
 
 
+def expand_rag_context_with_symbols(
+    rag_chunks: List[str],
+    *,
+    repo_root: str,
+    max_symbols: int = 12,
+    max_chars: int = 3500,
+) -> str:
+    """
+    Sym-RAG:
+    1) take vector-retrieved text chunks
+    2) extract potential class/function names
+    3) resolve definitions with SymbolIndex
+    4) append snippets to build context
+    """
+    if not rag_chunks:
+        return ""
+    try:
+        from cogem.symbols import SymbolIndex
+    except Exception:
+        return ""
+
+    # Symbol candidates from class-like and function-call-like patterns.
+    candidates: List[str] = []
+    seen: Set[str] = set()
+    for chunk in rag_chunks:
+        for m in re.finditer(r"\b([A-Z][A-Za-z0-9_]{2,})\b", chunk or ""):
+            s = (m.group(1) or "").strip()
+            if s and s not in seen:
+                seen.add(s)
+                candidates.append(s)
+        for m in re.finditer(r"\b([a-z_][a-z0-9_]{2,})\s*\(", chunk or ""):
+            s = (m.group(1) or "").strip()
+            if s and s not in seen:
+                seen.add(s)
+                candidates.append(s)
+
+    stop = {
+        "return",
+        "import",
+        "from",
+        "class",
+        "function",
+        "const",
+        "let",
+        "var",
+        "true",
+        "false",
+        "none",
+        "null",
+        "print",
+        "raise",
+    }
+    candidates = [c for c in candidates if c.lower() not in stop]
+    if not candidates:
+        return ""
+
+    idx = SymbolIndex(repo_root)
+    parts: List[str] = []
+    used_loc: Set[Tuple[str, int]] = set()
+    total = 0
+    remaining = max(1, int(max_symbols))
+    limit_chars = max(1, int(max_chars))
+
+    for sym in candidates:
+        if remaining <= 0 or total >= limit_chars:
+            break
+        rs = idx.resolve_symbol_to_snippet(sym, context_lines=14, max_chars=1200)
+        if rs is None:
+            continue
+        loc = (rs.tag.path, rs.tag.line)
+        if loc in used_loc:
+            continue
+        used_loc.add(loc)
+        rel = rs.tag.path
+        try:
+            rel = os.path.relpath(rs.tag.path, repo_root).replace("\\", "/")
+        except ValueError:
+            pass
+        block = (
+            f"### {sym} -> {rel}:{rs.tag.line}\n"
+            f"```{os.path.splitext(rel)[1].lstrip('.')}\n{rs.snippet}\n```\n"
+        )
+        if total + len(block) > limit_chars:
+            break
+        parts.append(block)
+        total += len(block)
+        remaining -= 1
+
+    if not parts:
+        return ""
+    return "## Sym-RAG symbol definitions\n\n" + "\n".join(parts).strip()
+
+
 def build_context_blocks(
     *,
     task: str,
@@ -51,6 +145,27 @@ def build_context_blocks(
     mention_roots_list: Any,
     path_allowed_for_mention: Any,
 ) -> Tuple[str, str]:
+    def _format_rag_rows(rows: List[dict], max_chars: int) -> str:
+        parts: List[str] = []
+        total = 0
+        limit = max(1, int(max_chars))
+        for r in rows:
+            if total >= limit:
+                break
+            path = (r.get("path") or "").strip()
+            text = (r.get("text") or "").strip()
+            if not path or not text:
+                continue
+            snippet = "\n".join(text.splitlines()[:160]).strip()
+            if not snippet:
+                continue
+            block = f"### {path}\n```\n{snippet}\n```\n"
+            if total + len(block) > limit:
+                break
+            parts.append(block)
+            total += len(block)
+        return "\n".join(parts).strip()
+
     auto_repo_context_on = (
         os.environ.get("COGEM_AUTO_REPO_CONTEXT", "1").strip().lower()
         not in ("0", "false", "no", "off", "disabled")
@@ -70,25 +185,53 @@ def build_context_blocks(
                 try:
                     from cogem.vector_index import (
                         VectorIndexConfig,
-                        semantic_repo_context_block_for_task,
+                        semantic_search_repo,
                     )
-
-                    auto_context_block = semantic_repo_context_block_for_task(
-                        repo_root=repo_root,
-                        task=task_clean,
-                        config=VectorIndexConfig(
-                            enabled=True,
-                            rebuild=bool(
-                                os.environ.get("COGEM_VECTOR_REBUILD", "0").strip().lower()
-                                in ("1", "true", "yes", "on")
-                            ),
-                            top_k=int(os.environ.get("COGEM_VECTOR_TOP_K", "8")),
-                            max_context_chars=auto_repo_max_chars,
-                            max_chunk_chars=int(
-                                os.environ.get("COGEM_VECTOR_CHUNK_CHARS", "2500")
-                            ),
+                    vector_cfg = VectorIndexConfig(
+                        enabled=True,
+                        rebuild=bool(
+                            os.environ.get("COGEM_VECTOR_REBUILD", "0").strip().lower()
+                            in ("1", "true", "yes", "on")
+                        ),
+                        top_k=int(os.environ.get("COGEM_VECTOR_TOP_K", "8")),
+                        max_context_chars=auto_repo_max_chars,
+                        max_chunk_chars=int(
+                            os.environ.get("COGEM_VECTOR_CHUNK_CHARS", "2500")
                         ),
                     )
+                    rag_rows = semantic_search_repo(
+                        repo_root=repo_root,
+                        task=task_clean,
+                        config=vector_cfg,
+                    )
+                    auto_context_block = _format_rag_rows(
+                        rag_rows, max_chars=auto_repo_max_chars
+                    )
+                    sym_rag_on = (
+                        os.environ.get("COGEM_SYM_RAG", "1").strip().lower()
+                        not in ("0", "false", "no", "off", "disabled")
+                    )
+                    if sym_rag_on and rag_rows:
+                        rag_chunks = [
+                            (r.get("text") or "").strip()
+                            for r in rag_rows
+                            if isinstance(r, dict)
+                        ]
+                        sym_block = expand_rag_context_with_symbols(
+                            rag_chunks,
+                            repo_root=repo_root,
+                            max_symbols=int(
+                                os.environ.get("COGEM_SYM_RAG_MAX_SYMBOLS", "12")
+                            ),
+                            max_chars=int(
+                                os.environ.get("COGEM_SYM_RAG_MAX_CHARS", "3500")
+                            ),
+                        )
+                        if sym_block:
+                            auto_context_block = (
+                                (auto_context_block + "\n\n" if auto_context_block else "")
+                                + sym_block
+                            )
                 except Exception:
                     auto_context_block = ""
             if not auto_context_block:

@@ -218,7 +218,7 @@ def main():
     from cogem.stitch import detect_stitch_frontend_heavy_task
     from cogem.stitch.adapters import looks_like_ui_content
     from cogem.task_intent import build_prerequisite_first_prompt, detect_prerequisite_first_task
-    from cogem.write_safety import plan_safe_writes
+    from cogem.write_safety import apply_unified_diff_safely, plan_safe_writes
     from cogem.command_policy import ALLOWED_EXECUTABLES, validate_local_command_args
     from cogem.llm_clients import (
         gemini_generate,
@@ -462,7 +462,41 @@ def main():
             + "\n\n---\n\n"
         )
 
+    # @ mention parser (quoted and unquoted paths). Image mentions are parsed from this
+    # stream as regular @ paths and then filtered by extension (.png/.jpg/.webp).
     _AT_MENTION = re.compile(r'@"([^"]+)"|@\'([^\']+)\'|@([^\s@]+)')
+
+    def _is_supported_image_path(path: str) -> bool:
+        p = (path or "").lower()
+        return p.endswith(".png") or p.endswith(".jpg") or p.endswith(".jpeg") or p.endswith(".webp")
+
+    def extract_image_mentions(raw: str) -> List[str]:
+        """
+        Resolve @image mentions from raw task text to absolute paths under allowed roots.
+        Supported extensions: .png, .jpg/.jpeg, .webp
+        """
+        if "@" not in (raw or ""):
+            return []
+        roots = _mention_roots_list()
+        out: List[str] = []
+        seen: Set[str] = set()
+        for m in _AT_MENTION.finditer(raw or ""):
+            rel = (m.group(1) or m.group(2) or m.group(3) or "").strip()
+            if not rel or not _is_supported_image_path(rel):
+                continue
+            abs_p = _resolve_mention_path(rel)
+            if not abs_p:
+                continue
+            if not _path_allowed_for_mention(abs_p, roots):
+                continue
+            if not os.path.isfile(abs_p):
+                continue
+            rp = os.path.realpath(abs_p)
+            if rp in seen:
+                continue
+            seen.add(rp)
+            out.append(rp)
+        return out
 
     def _mention_roots_list() -> List[str]:
         roots: List[str] = []
@@ -943,6 +977,12 @@ def main():
     def trace_done(msg: str) -> None:
         _say(f"  {_wall_clock()} ok {msg}")
 
+    async def trace_doing_async(msg: str) -> None:
+        await asyncio.to_thread(trace_doing, msg)
+
+    async def trace_done_async(msg: str) -> None:
+        await asyncio.to_thread(trace_done, msg)
+
     def section_heading(label: str) -> None:
         _say("")
         _say(f"---------- {label} ----------")
@@ -994,6 +1034,48 @@ def main():
             _sys.stdout.flush()
         elapsed = time.monotonic() - t0
         _say(f"[cogem] DONE:  {label}  ({elapsed:.1f}s)")
+        return out
+
+    async def _run_with_ascii_progress_async(label: str, coro_factory):
+        """
+        Async ASCII spinner for non-blocking SDK calls.
+        Keeps terminal responsive while awaiting model coroutines.
+        """
+        import sys as _sys
+
+        await trace_doing_async(f"START: {label}")
+        stop = asyncio.Event()
+        t0 = time.monotonic()
+        frames = "|/-\\"
+
+        async def _spin() -> None:
+            i = 0
+            while not stop.is_set():
+                elapsed = int(time.monotonic() - t0)
+                ch = frames[i % len(frames)]
+                tail = f"... working {ch} ({elapsed}s)"
+                line = f"  {label} {tail}"
+                pad = max(0, 76 - len(line))
+                _sys.stdout.write(
+                    "\r" + _SPINNER_DIM + line + (" " * pad) + _SPINNER_RESET
+                )
+                _sys.stdout.flush()
+                i += 1
+                await asyncio.sleep(0.12)
+
+        spin_task = asyncio.create_task(_spin())
+        try:
+            out = await coro_factory()
+        finally:
+            stop.set()
+            try:
+                await spin_task
+            except Exception:
+                pass
+            _sys.stdout.write("\r" + (" " * 80) + "\r\n")
+            _sys.stdout.flush()
+        elapsed = time.monotonic() - t0
+        await trace_done_async(f"DONE:  {label}  ({elapsed:.1f}s)")
         return out
 
     def run_cmd(
@@ -1699,16 +1781,27 @@ def main():
             not in ("0", "false", "no", "off", "disabled")
         )
 
-        def _run_sdk():
-            if use_async:
-                return asyncio.run(
-                    openai_generate_async(prompt, sdk_model, timeout_sec=timeout)
-                )
+        async def _run_sdk_async():
+            return await openai_generate_async(prompt, sdk_model, timeout_sec=timeout)
+
+        def _run_sdk_sync():
             return openai_generate(prompt, sdk_model, timeout_sec=timeout)
 
         if backend in ("auto", "sdk"):
             try:
-                r = _run_with_ascii_progress(status_msg, _run_sdk) if status_msg else _run_sdk()
+                if use_async:
+                    if status_msg:
+                        r = asyncio.run(
+                            _run_with_ascii_progress_async(status_msg, _run_sdk_async)
+                        )
+                    else:
+                        r = asyncio.run(_run_sdk_async())
+                else:
+                    r = (
+                        _run_with_ascii_progress(status_msg, _run_sdk_sync)
+                        if status_msg
+                        else _run_sdk_sync()
+                    )
                 if r.returncode == 0:
                     _record_tokens("codex", r.text or "")
                     return r.text or "", "", 0
@@ -1737,16 +1830,27 @@ def main():
             not in ("0", "false", "no", "off", "disabled")
         )
 
-        def _run_sdk():
-            if use_async:
-                return asyncio.run(
-                    gemini_generate_async(prompt, sdk_model, timeout_sec=timeout)
-                )
+        async def _run_sdk_async():
+            return await gemini_generate_async(prompt, sdk_model, timeout_sec=timeout)
+
+        def _run_sdk_sync():
             return gemini_generate(prompt, sdk_model, timeout_sec=timeout)
 
         if backend in ("auto", "sdk"):
             try:
-                r = _run_with_ascii_progress(status_msg, _run_sdk) if status_msg else _run_sdk()
+                if use_async:
+                    if status_msg:
+                        r = asyncio.run(
+                            _run_with_ascii_progress_async(status_msg, _run_sdk_async)
+                        )
+                    else:
+                        r = asyncio.run(_run_sdk_async())
+                else:
+                    r = (
+                        _run_with_ascii_progress(status_msg, _run_sdk_sync)
+                        if status_msg
+                        else _run_sdk_sync()
+                    )
                 if r.returncode == 0:
                     _record_tokens("gemini", r.text or "")
                     return (r.text or "").strip(), "", 0
@@ -1881,6 +1985,54 @@ __TASK__
 ---
 """
 
+    GEMINI_REVIEW_PROMPT = """You are Gemini acting as a strict multi-persona reviewer for Cogem.
+
+Run a structured audit in exactly these roles:
+1) Security Lead
+2) Performance Engineer
+3) Senior Architect
+
+Audit requirements:
+- Security Lead: check for injections, path traversal, unsafe command/file execution, secret exposure, auth/session mistakes.
+- Performance Engineer: check algorithmic complexity (especially avoidable O(n^2)+), memory overhead, repeated expensive work, and I/O hot paths.
+- Senior Architect: check idiomatic consistency with @Codebase, layering boundaries, naming/style consistency, and maintainability.
+
+Output format (Markdown, strict):
+## Security Lead
+- Findings
+- Risks
+- Recommended fixes
+
+## Performance Engineer
+- Findings
+- Risks
+- Recommended fixes
+
+## Senior Architect
+- Findings
+- Risks
+- Recommended fixes
+
+## Consolidated Fix Plan For Codex
+- Ordered, concrete implementation steps Codex can apply.
+- Include target files/symbols when inferable.
+
+Rules:
+- Be specific and actionable; avoid generic statements.
+- If no issue in a section, explicitly say "No critical issues found" and add minor improvements if any.
+- Do not rewrite code; provide review guidance only.
+
+Context:
+---
+__CONTEXT__
+---
+
+Code to audit:
+---
+__CODE__
+---
+"""
+
     _PERSIST_LINE = re.compile(
         r"^PERSIST\s+(note|stack|constraints|decision)\s*:\s*(.+?)\s*$",
         re.I,
@@ -1926,6 +2078,12 @@ __TASK__
         if first in ("BUILD", "CHAT"):
             return first
         return None
+
+    def build_gemini_review_prompt(context_block: str, code_text: str) -> str:
+        return (
+            GEMINI_REVIEW_PROMPT.replace("__CONTEXT__", context_block or "")
+            .replace("__CODE__", code_text or "")
+        )
 
     def run_visual_ui_review(task_text: str) -> Optional[str]:
         enabled = (
@@ -2575,9 +2733,21 @@ No markdown, no other text."""
         matches = re.findall(pattern, text)
         return {name.strip(): content.strip() for name, content in matches}
 
-    def write_files(files) -> Dict[str, str]:
+    def extract_unified_diff(text: str) -> str:
+        s = text or ""
+        m = re.search(r"```diff\s*\n([\s\S]*?)```", s, re.I)
+        if m:
+            return (m.group(1) or "").strip()
+        # Fallback: treat raw content as diff if it has standard file headers.
+        if ("--- a/" in s and "+++ b/" in s) or ("\n--- " in s and "\n+++ " in s):
+            return s.strip()
+        return ""
+
+    def write_files(files, unified_diff_text: str = "") -> Dict[str, str]:
         """
-        Safe writer for model FILE: outputs.
+        Safe writer for model outputs:
+        - unified diff patches for existing files
+        - FILE: blocks for new files / full-file writes
         Returns {written_relative_path: content}.
         """
         repo_root = _repo_root()
@@ -2602,8 +2772,22 @@ No markdown, no other text."""
                 )
             )
 
+        written: Dict[str, str] = {}
+
+        # Apply unified diff first (existing files), best-effort.
+        if (unified_diff_text or "").strip():
+            diff_written, diff_errors = apply_unified_diff_safely(
+                repo_root=repo_root,
+                diff_text=unified_diff_text,
+            )
+            for pth in sorted(diff_written.keys()):
+                _say(f"  [ok] patched {pth}")
+            for err in diff_errors:
+                console.print(Text(f"[cogem] Patch warning: {err}", style=LOG_WARN))
+            written.update(diff_written)
+
         if not allowed:
-            return {}
+            return written
 
         if dry_run:
             console.print(Text("[cogem] Dry-run mode: no files were written.", style=LOG_WARN))
@@ -2613,7 +2797,7 @@ No markdown, no other text."""
                 except ValueError:
                     rel = p.target_path
                 _say(f"  [dry-run] {rel}")
-            return {}
+            return written
 
         if approval_required:
             if not sys.stdin.isatty():
@@ -2623,7 +2807,7 @@ No markdown, no other text."""
                         style=LOG_WARN,
                     )
                 )
-                return {}
+                return written
             console.print()
             section_rule("Write approval")
             console.print(Text(f"About to write {len(allowed)} file(s) under repo root:", style=MUTED))
@@ -2638,9 +2822,7 @@ No markdown, no other text."""
             ans = console.input(Text("Proceed with writes? [y/N]: ", style=TITLE)).strip().lower()
             if ans not in ("y", "yes"):
                 console.print(Text("[cogem] Write approval denied; skipping writes.", style=LOG_WARN))
-                return {}
-
-        written: Dict[str, str] = {}
+                return written
         for p in allowed:
             content = files.get(p.original_name, "")
             parent = os.path.dirname(p.target_path) or repo_root
@@ -2737,6 +2919,19 @@ No markdown, no other text."""
 
     with open(os.path.join(AI_PATH, "CODEX.md"), encoding="utf-8") as f:
         CODEX_RULES = f.read()
+
+    CODEX_PATCH_RULES = (
+        "\n\n## Output format policy (surgical patching)\n"
+        "- For edits to existing files, prefer standard Unified Diff blocks:\n"
+        "  --- a/path/to/file\n"
+        "  +++ b/path/to/file\n"
+        "  @@ ...\n"
+        "- For new files, use FILE: blocks:\n"
+        "  FILE: path/to/new_file.ext\n"
+        "  <full file content>\n"
+        "- Do not mix markdown explanation between diff hunks.\n"
+        "- Keep patches minimal and targeted.\n"
+    )
 
     with open(os.path.join(AI_PATH, "GEMINI.md"), encoding="utf-8") as f:
         GEMINI_RULES = f.read()
@@ -2857,6 +3052,7 @@ No markdown, no other text."""
                 continue
 
             task, session_directive = parse_session_directive(task)
+            image_mentions = extract_image_mentions(task)
             task_clean, attach_block = expand_at_mentions(task)
             if attach_block:
                 n_refs = attach_block.count("### ")
@@ -3029,6 +3225,63 @@ No markdown, no other text."""
             trace_doing(
                 "I'm calling Codex with your task, CODEX.md rules, and any saved memory so I can get a first implementation pass."
             )
+            visual_spec_block = ""
+            if session_directive == "build" and image_mentions:
+                trace_doing(
+                    "Image @ mentions detected in /build; generating Gemini visual spec for Codex."
+                )
+                model_vs = (
+                    os.environ.get("COGEM_IMAGE_SPEC_MODEL", "").strip()
+                    or "gemini-2.5-flash"
+                )
+                use_async_vs = (
+                    os.environ.get("COGEM_ASYNC_LLM", "1").strip().lower()
+                    not in ("0", "false", "no", "off", "disabled")
+                )
+                vs_parts: List[str] = []
+                for img in image_mentions[:4]:
+                    prompt_vs = (
+                        "Describe this UI image in technical detail for implementation.\n"
+                        "Focus on: layout structure, component hierarchy, spacing/grid, "
+                        "visual styling (colors, typography, shadows, borders), interaction hints, "
+                        "responsive behavior assumptions, and reusable component tokens.\n"
+                        "Return markdown with sections: Layout, Components, Styling, Interactions, Responsiveness."
+                    )
+                    if use_async_vs:
+                        vr = asyncio.run(
+                            gemini_generate_with_image_async(
+                                prompt_vs,
+                                model_vs,
+                                img,
+                                timeout_sec=_subprocess_timeout_sec() or 60,
+                            )
+                        )
+                    else:
+                        vr = gemini_generate_with_image(
+                            prompt_vs,
+                            model_vs,
+                            img,
+                            timeout_sec=_subprocess_timeout_sec() or 60,
+                        )
+                    if vr.returncode == 0 and (vr.text or "").strip():
+                        try:
+                            rel_img = os.path.relpath(img, ROOT).replace("\\", "/")
+                        except ValueError:
+                            rel_img = img
+                        vs_parts.append(f"### {rel_img}\n{(vr.text or '').strip()}")
+                if vs_parts:
+                    visual_spec_block = (
+                        "## Visual Spec (from @image mentions via Gemini Vision)\n\n"
+                        + "\n\n".join(vs_parts)
+                        + "\n\n"
+                    )
+                    trace_done(
+                        "Visual Spec generated and prepended to Codex draft prompt."
+                    )
+                else:
+                    trace_done(
+                        "Could not generate Visual Spec from @image mentions; continuing without it."
+                    )
             tdd_extra_hint = ""
             if session_directive == "build":
                 tdd_extra_hint = (
@@ -3036,16 +3289,16 @@ No markdown, no other text."""
                     "Because the user asked for /build, you MUST write tests (create/update) when possible, "
                     "run them mentally (expect failures initially), and then implement fixes so that the repository's "
                     "detected test command passes.\n"
-                    "When returning output for a project, use FILE: blocks for all changes.\n"
+                    "For existing files, prefer unified diff blocks; for new files, use FILE: blocks.\n"
                 )
             raw, draft_err, draft_rc = run_codex(
-                f"{mem_block}{attach_block}{auto_context_block}{symbol_dep_context_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}"
+                f"{visual_spec_block}{mem_block}{attach_block}{auto_context_block}{symbol_dep_context_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}{CODEX_PATCH_RULES}"
                 f"{tdd_extra_hint}\n\nTASK:\n{task_clean}\n",
                 "Codex: drafting initial implementation...",
             )
             if draft_rc != 0:
                 trace_done(
-                    "Codex draft failed; no FILE: blocks or code to continue with."
+                    "Codex draft failed; no diff/FILE output to continue with."
                 )
                 console.print()
                 _say(f"[cogem] ERROR: Codex draft exited with code {draft_rc}.")
@@ -3063,20 +3316,21 @@ No markdown, no other text."""
                 console.print()
                 _token_turn_footer()
                 continue
-            trace_done(
-                "Codex finished; I'm inspecting the response for FILE: blocks (multi-file) versus a single code blob."
-            )
+                trace_done(
+                    "Codex finished; I'm inspecting the response for unified diff patches and/or FILE blocks."
+                )
             console.print()
 
             files = extract_files(raw)
+            draft_diff = extract_unified_diff(raw)
 
-            if files:
+            if files or draft_diff:
                 trace_doing(
-                    f"I'm writing {len(files)} file(s) from Codex's FILE: layout, then I'll run preview/script hooks if the extensions match."
+                    f"I'm applying Codex output (FILE blocks and/or unified diff patches), then I'll run preview/script hooks if relevant."
                 )
                 section_heading("PROJECT MODE")
                 console.print()
-                written_files = write_files(files)
+                written_files = write_files(files, unified_diff_text=draft_diff)
                 console.print()
                 if written_files:
                     run_written_artifacts(written_files)
@@ -3127,7 +3381,7 @@ No markdown, no other text."""
 
                         # Ask Codex to fix the project so checks pass.
                         fix_prompt = f"""
-{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}
+{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}{CODEX_PATCH_RULES}
 
 TASK:
 {task_clean}
@@ -3137,7 +3391,9 @@ Self-Correction feedback (from automated validation run):
 
 Fix the project so the test/lint/typecheck commands pass.
 If tests still fail, iterate again (changes must make the validation commands pass).
-Return ONLY FILE: blocks (add/update files as needed).
+Return project edits as:
+- unified diff blocks for existing files
+- FILE: blocks for new files
 """
                         improved_raw, imp_err, imp_rc = run_codex(
                             fix_prompt, "Codex: fixing via validation feedback..."
@@ -3151,20 +3407,21 @@ Return ONLY FILE: blocks (add/update files as needed).
                             )
                             break
                         improved_files = extract_files(improved_raw)
-                        if not improved_files:
+                        improved_diff = extract_unified_diff(improved_raw)
+                        if not improved_files and not improved_diff:
                             console.print(
                                 Text(
-                                    "[cogem] WARNING: No FILE: blocks returned from Codex fix pass.",
+                                    "[cogem] WARNING: No FILE: blocks or diff patches returned from Codex fix pass.",
                                     style=LOG_WARN,
                                 )
                             )
                             break
 
                         console.print()
-                        trace_doing(
-                            f"Writing {len(improved_files)} file(s) from Codex validation-fix pass ..."
+                        trace_doing("Applying Codex validation-fix output (diff/FILE) ...")
+                        written_fix_files = write_files(
+                            improved_files, unified_diff_text=improved_diff
                         )
-                        written_fix_files = write_files(improved_files)
                         console.print()
                         if written_fix_files:
                             run_written_artifacts(written_fix_files)
@@ -3198,7 +3455,7 @@ Return ONLY FILE: blocks (add/update files as needed).
                             "Applying visual-review feedback with a final Codex fix pass."
                         )
                         visual_fix_prompt = f"""
-{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}
+{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}{CODEX_PATCH_RULES}
 
 TASK:
 {task_clean}
@@ -3207,21 +3464,24 @@ Visual Review Feedback:
 {visual_review}
 
 Fix the project to resolve visual/layout issues.
-Return ONLY FILE: blocks.
+Return project edits as:
+- unified diff blocks for existing files
+- FILE: blocks for new files
 """
                         vraw, verr, vrc = run_codex(
                             visual_fix_prompt, "Codex: applying visual review fixes..."
                         )
                         if vrc == 0:
                             vfiles = extract_files(vraw)
-                            if vfiles:
-                                _ = write_files(vfiles)
+                            vdiff = extract_unified_diff(vraw)
+                            if vfiles or vdiff:
+                                _ = write_files(vfiles, unified_diff_text=vdiff)
                                 trace_done(
-                                    "Visual review fixes applied from Codex FILE blocks."
+                                    "Visual review fixes applied from Codex diff/FILE output."
                                 )
                             else:
                                 trace_done(
-                                    "Visual fix pass returned no FILE blocks; skipped."
+                                    "Visual fix pass returned no FILE blocks or diff patches; skipped."
                                 )
                         else:
                             if (verr or "").strip():
@@ -3286,9 +3546,12 @@ Return ONLY FILE: blocks.
                     )
             except Exception:
                 git_ctx_block = ""
-            review, gem_rev_err, gem_rev_rc = run_gemini(
+            review_context = (
                 f"{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{GEMINI_RULES}"
-                f"{git_ctx_block}\n\nCODE:\n{code}",
+                f"{git_ctx_block}"
+            )
+            review, gem_rev_err, gem_rev_rc = run_gemini(
+                build_gemini_review_prompt(review_context, code),
                 "Gemini: writing structured review...",
             )
             if gem_rev_rc != 0:
@@ -3326,7 +3589,7 @@ Return ONLY FILE: blocks.
                 "I'm calling Codex again with the original code, Gemini's review, and the same generation rules so it can revise in place."
             )
             codex_improve_prompt = f"""
-{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}
+{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}{CODEX_PATCH_RULES}
 
 You wrote:
 
