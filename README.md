@@ -24,6 +24,54 @@ This creates a self-improving coding workflow that works for:
 
 ---
 
+## Why Use Cogem Over Standalone CLIs?
+
+Standalone CLIs like `codex`, `gemini`, or `claude` are great for quick, direct edits.  
+Cogem is optimized for engineering quality on larger tasks by adding routing, review, and validation structure around model calls.
+
+### 1) Workflow Rigor (Dual-Agent Loop)
+
+- **Standalone:** usually single-author flow (model writes, human reviews).
+- **Cogem:** `Codex draft -> Gemini independent review -> Codex improve`, which mirrors a PR author/reviewer pattern and reduces shallow or hallucinated output.
+
+### 2) Intent Routing + Prerequisite-First Handling
+
+- **Standalone:** mixed prompts can jump into implementation too early.
+- **Cogem:** routing layer separates conversational vs build turns and can answer prerequisite questions before entering the build loop.
+
+### 3) Specialized Frontend Stage (Stitch)
+
+- **Standalone:** strong general-purpose UI generation, but no dedicated design handoff stage.
+- **Cogem:** UI-heavy tasks can route through Stitch adapters/manual handoff first, then continue with the normal build/review/improve pipeline.
+- Includes clipboard-assisted handoff in manual Stitch mode when available.
+
+### 4) Persistent Context + Managed Memory
+
+- **Standalone:** strong session context, but long-term project decisions are easy to lose across runs.
+- **Cogem:** persists stack/constraints/decisions in `memory.json`, with pruning/summarization to keep context focused instead of unbounded growth.
+
+### 5) Self-Correcting Validation Loop
+
+- **Standalone:** you usually run tests/lint manually and paste failures back.
+- **Cogem:** can run detected checks in sandbox/Docker and feed failures back into an automatic correction pass.
+
+### Quick Comparison
+
+| Dimension | Standalone CLIs (`gemini`, `codex`, `claude`) | Cogem |
+|---|---|---|
+| Model usage | Single-provider, direct | Multi-provider orchestration |
+| Review process | Human-only review | Cross-model peer review (`Codex <-> Gemini`) |
+| Context continuity | Mostly session-scoped | Persistent summarized project memory |
+| Validation | Manual test/lint loop | Auto-sandboxed validation + retry |
+| Primary strength | Speed, one-off tasks | Quality, correctness, multi-file project work |
+
+### Practical Guidance
+
+- Use **standalone CLIs** for quick scripts, short Q&A, and small one-file changes.
+- Use **Cogem** for feature builds, refactors, architecture work, and tasks where you want independent review plus automated verification.
+
+---
+
 ## Project Structure
 
 ```
