@@ -4,7 +4,6 @@ __pycache__/
 *.py[cod]
 
 venv/
-tmpclaude-*
 
 # Per-user persistent context (created on first run; do not commit)
 memory.json

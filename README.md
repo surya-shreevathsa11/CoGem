@@ -28,7 +28,7 @@ This creates a self-improving coding workflow that works for:
 
 ## Why Use Cogem Over Standalone CLIs?
 
-Standalone CLIs like `codex`, `gemini`, or `claude` are great for quick, direct edits.  
+Standalone CLIs like `codex` or `gemini` are great for quick, direct edits.  
 Cogem is optimized for engineering quality on larger tasks by adding routing, review, and validation structure around model calls.
 
 ### 1) Workflow Rigor (Dual-Agent Loop)
@@ -60,7 +60,7 @@ Cogem is optimized for engineering quality on larger tasks by adding routing, re
 ### Quick Comparison
 
 
-| Dimension          | Standalone CLIs (`gemini`, `codex`, `claude`) | Cogem                                         |
+| Dimension          | Standalone CLIs (`gemini`, `codex`) | Cogem                                         |
 | ------------------ | --------------------------------------------- | --------------------------------------------- |
 | Model usage        | Single-provider, direct                       | Multi-provider orchestration                  |
 | Review process     | Human-only review                             | Cross-model peer review (`Codex <-> Gemini`)  |
@@ -385,7 +385,7 @@ pipx install -e . --force
 
 
 - **If you do not set a model** for a backend, cogem **does not pass `-m`** for that CLI, so **that tool’s default model** is used (same as running `codex` / `gemini` without `-m`).
-- **Valid `MODEL_ID` strings** depend on your installed CLI version and account (OpenAI, Google, Anthropic, etc.). Examples people use include `o3`, `gemini-2.5-pro`, `gemini-2.5-flash`; exact names are defined by each CLI — use `codex exec --help` and `gemini --help` on your machine.
+- **Valid `MODEL_ID` strings** depend on your installed CLI version and account (OpenAI, Google, etc.). Examples people use include `o3`, `gemini-2.5-pro`, `gemini-2.5-flash`; exact names are defined by each CLI — use `codex exec --help` and `gemini --help` on your machine.
 
 ```bash
 cogem --codex-model o3 --gemini-model gemini-2.5-pro
