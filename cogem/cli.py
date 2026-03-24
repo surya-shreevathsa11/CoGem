@@ -183,7 +183,7 @@ def boot_sequence() -> bool:
     return True
 
 
-async def main():
+async def async_main():
     import asyncio
     import contextvars
     import argparse
@@ -4031,7 +4031,11 @@ NEW:
                 raise SystemExit(0) from None
 
 
-if __name__ == "__main__":
-    import asyncio as _asyncio
+def main() -> None:
+    import asyncio
 
-    _asyncio.run(main())
+    asyncio.run(async_main())
+
+
+if __name__ == "__main__":
+    main()
