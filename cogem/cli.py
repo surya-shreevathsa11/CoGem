@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from dataclasses import dataclass
+from typing import List
 
 # Boot palette (24-bit ANSI) — matches cogem rose theme, not plain white
 _BOOT_ROSE = "\033[38;2;190;85;85m"
@@ -7,6 +9,14 @@ _BOOT_BLUSH = "\033[38;2;255;200;200m"
 _BOOT_MUTED = "\033[38;2;180;130;130m"
 _BOOT_ERR = "\033[38;2;230;70;90m"
 _BOOT_RESET = "\033[0m"
+
+
+@dataclass
+class SubTask:
+    id: str
+    description: str
+    target_files: List[str]
+    status: str
 
 
 def _boot_type_line(text: str, delay: float = 0.008, color: str = _BOOT_SOFT) -> None:
@@ -175,6 +185,7 @@ def boot_sequence() -> bool:
 
 async def main():
     import asyncio
+    import contextvars
     import argparse
     import json
     import subprocess
@@ -992,6 +1003,30 @@ async def main():
 
     _SPINNER_DIM = "\033[2m"
     _SPINNER_RESET = "\033[0m"
+    _TEAM_STATUS: Dict[str, str] = {}
+    _TEAM_RENDER_LINES = {"count": 0}
+    _TEAM_KEY_VAR = contextvars.ContextVar("cogem_team_key", default="")
+
+    def _render_team_status_board() -> None:
+        import sys as _sys
+
+        items = sorted(_TEAM_STATUS.items())
+        if not items and _TEAM_RENDER_LINES["count"] == 0:
+            return
+        # Move cursor up to redraw previous board.
+        for _ in range(_TEAM_RENDER_LINES["count"]):
+            _sys.stdout.write("\x1b[1A")
+        lines: List[str] = []
+        if items:
+            lines.append("  Team Status:")
+            for k, v in items:
+                lines.append(f"   - {k}: {v}")
+        else:
+            lines.append("")
+        _TEAM_RENDER_LINES["count"] = len(lines)
+        for ln in lines:
+            _sys.stdout.write("\r\x1b[2K" + ln + "\n")
+        _sys.stdout.flush()
 
     def _run_with_ascii_progress(label: str, fn):
         """
@@ -1047,6 +1082,7 @@ async def main():
         stop = asyncio.Event()
         t0 = time.monotonic()
         frames = "|/-\\"
+        team_key = _TEAM_KEY_VAR.get() or ""
 
         async def _spin() -> None:
             i = 0
@@ -1056,10 +1092,14 @@ async def main():
                 tail = f"... working {ch} ({elapsed}s)"
                 line = f"  {label} {tail}"
                 pad = max(0, 76 - len(line))
-                _sys.stdout.write(
-                    "\r" + _SPINNER_DIM + line + (" " * pad) + _SPINNER_RESET
-                )
-                _sys.stdout.flush()
+                if team_key:
+                    _TEAM_STATUS[team_key] = f"{label} {tail}"
+                    _render_team_status_board()
+                else:
+                    _sys.stdout.write(
+                        "\r" + _SPINNER_DIM + line + (" " * pad) + _SPINNER_RESET
+                    )
+                    _sys.stdout.flush()
                 i += 1
                 await asyncio.sleep(0.12)
 
@@ -1072,8 +1112,12 @@ async def main():
                 await spin_task
             except Exception:
                 pass
-            _sys.stdout.write("\r" + (" " * 80) + "\r\n")
-            _sys.stdout.flush()
+            if team_key:
+                _TEAM_STATUS[team_key] = f"{label} done"
+                _render_team_status_board()
+            else:
+                _sys.stdout.write("\r" + (" " * 80) + "\r\n")
+                _sys.stdout.flush()
         elapsed = time.monotonic() - t0
         await trace_done_async(f"DONE:  {label}  ({elapsed:.1f}s)")
         return out
@@ -2033,6 +2077,37 @@ __CODE__
 ---
 """
 
+    ARCHITECT_SUBTASK_PROMPT = """You are the Architect for Cogem Parallel Agent Teams.
+Analyze the task and decide if it should be split into parallel sub-tasks.
+
+Return ONLY JSON:
+- For simple/small or non-parallelizable tasks: []
+- For complex/multi-file tasks: an array of objects:
+  {
+    "id": "team-1",
+    "description": "work order",
+    "target_files": ["relative/path1", "relative/path2"]
+  }
+
+Rules:
+- Max 4 sub-tasks.
+- target_files should be likely files/folders that task touches.
+- Keep descriptions concrete and implementation-ready.
+
+Task:
+__TASK__
+"""
+
+    INTEGRATION_REVIEW_PROMPT = """You are the Lead Integrator.
+Review these parallel team outputs for consistency (matching endpoints, shared types, variable names, and integration contracts).
+Return ONLY final corrected project edits as:
+- unified diff blocks for existing files
+- FILE: blocks for new files
+
+Parallel outputs:
+__OUTPUTS__
+"""
+
     _PERSIST_LINE = re.compile(
         r"^PERSIST\s+(note|stack|constraints|decision)\s*:\s*(.+?)\s*$",
         re.I,
@@ -2082,6 +2157,102 @@ __CODE__
             GEMINI_REVIEW_PROMPT.replace("__CONTEXT__", context_block or "")
             .replace("__CODE__", code_text or "")
         )
+
+    def _parse_subtasks_json(raw: str) -> List[SubTask]:
+        txt = (raw or "").strip()
+        if not txt:
+            return []
+        try:
+            data = json.loads(txt)
+        except Exception:
+            m = re.search(r"```json\s*([\s\S]*?)```", txt, re.I)
+            if not m:
+                return []
+            try:
+                data = json.loads((m.group(1) or "").strip())
+            except Exception:
+                return []
+        if not isinstance(data, list):
+            return []
+        out: List[SubTask] = []
+        for i, it in enumerate(data):
+            if not isinstance(it, dict):
+                continue
+            sid = str(it.get("id") or f"team-{i+1}").strip()
+            desc = str(it.get("description") or "").strip()
+            tf = it.get("target_files") or []
+            if not isinstance(tf, list):
+                tf = []
+            targets = [str(x).strip() for x in tf if str(x).strip()]
+            if not sid or not desc:
+                continue
+            out.append(SubTask(id=sid, description=desc, target_files=targets, status="pending"))
+        return out[:4]
+
+    async def run_agent_team(sub_task: SubTask, context: dict) -> str:
+        token = _TEAM_KEY_VAR.set(sub_task.id)
+        try:
+            sub_task.status = "running"
+            target_attach = ""
+            if sub_task.target_files:
+                refs = " ".join(f"@{p}" for p in sub_task.target_files)
+                _, target_attach = expand_at_mentions(refs)
+            sub_auto_ctx, sub_sym_ctx = build_context_blocks(
+                task=" ".join(f"@{p}" for p in sub_task.target_files),
+                task_clean=sub_task.description,
+                repo_root=_repo_root(),
+                mention_pattern=_AT_MENTION,
+                resolve_mention_path=_resolve_mention_path,
+                mention_roots_list=_mention_roots_list,
+                path_allowed_for_mention=_path_allowed_for_mention,
+            )
+            draft_prompt = (
+                f"{context['mem_block']}{target_attach}{sub_auto_ctx}{sub_sym_ctx}"
+                f"{context['stitch_block']}{context['stitch_rules_extra']}{context['mode_hint']}{CODEX_RULES}{CODEX_PATCH_RULES}\n\n"
+                f"TASK:\n{sub_task.description}\n"
+            )
+            raw, derr, drc = await run_codex(
+                draft_prompt, f"Team {sub_task.id}: Codex draft..."
+            )
+            if drc != 0:
+                sub_task.status = "failed"
+                return f"### {sub_task.id}\n[codex draft failed]\n{(derr or '')[:500]}"
+
+            review_prompt = build_gemini_review_prompt(
+                f"{context['mem_block']}{target_attach}{context['mode_hint']}{GEMINI_RULES}",
+                raw,
+            )
+            rev, rerr, rrc = await run_gemini(
+                review_prompt, f"Team {sub_task.id}: Gemini review..."
+            )
+            if rrc != 0:
+                rev = f"(review unavailable: {(rerr or '')[:300]})"
+            improve_prompt = f"""
+{context['mem_block']}{target_attach}{context['stitch_block']}{context['stitch_rules_extra']}{context['mode_hint']}{CODEX_RULES}{CODEX_PATCH_RULES}
+
+TASK:
+{sub_task.description}
+
+You wrote:
+{raw}
+
+Feedback:
+{rev}
+
+Return project edits as:
+- unified diff blocks for existing files
+- FILE: blocks for new files
+"""
+            improved, ierr, irc = await run_codex(
+                improve_prompt, f"Team {sub_task.id}: Codex improve..."
+            )
+            if irc != 0:
+                sub_task.status = "failed"
+                return f"### {sub_task.id}\n[codex improve failed]\n{(ierr or '')[:500]}"
+            sub_task.status = "done"
+            return f"### {sub_task.id}\n{improved.strip()}\n"
+        finally:
+            _TEAM_KEY_VAR.reset(token)
 
     async def run_visual_ui_review(task_text: str) -> Optional[str]:
         enabled = (
@@ -3277,6 +3448,60 @@ No markdown, no other text."""
                     trace_done(
                         "Could not generate Visual Spec from @image mentions; continuing without it."
                     )
+            parallel_raw = ""
+            architect_subtasks: List[SubTask] = []
+            if mode == "workflow":
+                try:
+                    arch_prompt = ARCHITECT_SUBTASK_PROMPT.replace("__TASK__", task_clean or "")
+                    arch_model = os.environ.get("COGEM_ARCHITECT_MODEL", "").strip() or "gemini-2.5-pro"
+                    arch_res = await gemini_generate_async(
+                        arch_prompt,
+                        arch_model,
+                        timeout_sec=_subprocess_timeout_sec() or 90,
+                    )
+                    if arch_res.returncode == 0:
+                        architect_subtasks = _parse_subtasks_json(arch_res.text or "")
+                except Exception:
+                    architect_subtasks = []
+
+            if architect_subtasks:
+                trace_done(
+                    f"Architect pass created {len(architect_subtasks)} parallel team task(s)."
+                )
+                team_context = {
+                    "mem_block": mem_block,
+                    "mode_hint": mode_hint,
+                    "stitch_block": stitch_block,
+                    "stitch_rules_extra": stitch_rules_extra,
+                }
+                for st in architect_subtasks:
+                    st.status = "queued"
+                    _TEAM_STATUS[st.id] = "queued"
+                _render_team_status_board()
+                team_outputs = await asyncio.gather(
+                    *[run_agent_team(st, team_context) for st in architect_subtasks]
+                )
+                for st in architect_subtasks:
+                    _TEAM_STATUS[st.id] = st.status
+                _render_team_status_board()
+                joined = "\n\n".join(team_outputs).strip()
+                integ_model = os.environ.get("COGEM_INTEGRATOR_MODEL", "").strip() or "gemini-2.5-pro"
+                integ_prompt = INTEGRATION_REVIEW_PROMPT.replace("__OUTPUTS__", joined[:50000])
+                integ_res = await gemini_generate_async(
+                    integ_prompt,
+                    integ_model,
+                    timeout_sec=_subprocess_timeout_sec() or 120,
+                )
+                if integ_res.returncode == 0 and (integ_res.text or "").strip():
+                    parallel_raw = (integ_res.text or "").strip()
+                    trace_done("Integration review produced merged project edits.")
+                else:
+                    trace_done("Integration review unavailable; using concatenated team outputs.")
+                    parallel_raw = joined
+                _TEAM_STATUS.clear()
+                _render_team_status_board()
+            else:
+                trace_done("Architect pass decided no parallel split; using sequential fallback.")
             tdd_extra_hint = ""
             if session_directive == "build":
                 tdd_extra_hint = (
@@ -3286,31 +3511,36 @@ No markdown, no other text."""
                     "detected test command passes.\n"
                     "For existing files, prefer unified diff blocks; for new files, use FILE: blocks.\n"
                 )
-            raw, draft_err, draft_rc = await run_codex(
-                f"{visual_spec_block}{mem_block}{attach_block}{auto_context_block}{symbol_dep_context_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}{CODEX_PATCH_RULES}"
-                f"{tdd_extra_hint}\n\nTASK:\n{task_clean}\n",
-                "Codex: drafting initial implementation...",
-            )
-            if draft_rc != 0:
-                trace_done(
-                    "Codex draft failed; no diff/FILE output to continue with."
+            if parallel_raw:
+                raw = parallel_raw
+                draft_err = ""
+                draft_rc = 0
+            else:
+                raw, draft_err, draft_rc = await run_codex(
+                    f"{visual_spec_block}{mem_block}{attach_block}{auto_context_block}{symbol_dep_context_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}{CODEX_PATCH_RULES}"
+                    f"{tdd_extra_hint}\n\nTASK:\n{task_clean}\n",
+                    "Codex: drafting initial implementation...",
                 )
-                console.print()
-                _say(f"[cogem] ERROR: Codex draft exited with code {draft_rc}.")
-                if (draft_err or "").strip():
-                    clip = (draft_err or "").strip()[:1200]
-                    if len((draft_err or "").strip()) > 1200:
-                        clip += "..."
-                    console.print(Text(clip, style=LOG_ERR))
-                console.print(
-                    Text(
-                        "Set COGEM_CODEX_WORKDIR to your project folder if Codex should write elsewhere.",
-                        style=MUTED,
+                if draft_rc != 0:
+                    trace_done(
+                        "Codex draft failed; no diff/FILE output to continue with."
                     )
-                )
-                console.print()
-                _token_turn_footer()
-                continue
+                    console.print()
+                    _say(f"[cogem] ERROR: Codex draft exited with code {draft_rc}.")
+                    if (draft_err or "").strip():
+                        clip = (draft_err or "").strip()[:1200]
+                        if len((draft_err or "").strip()) > 1200:
+                            clip += "..."
+                        console.print(Text(clip, style=LOG_ERR))
+                    console.print(
+                        Text(
+                            "Set COGEM_CODEX_WORKDIR to your project folder if Codex should write elsewhere.",
+                            style=MUTED,
+                        )
+                    )
+                    console.print()
+                    _token_turn_footer()
+                    continue
                 trace_done(
                     "Codex finished; I'm inspecting the response for unified diff patches and/or FILE blocks."
                 )
