@@ -55,108 +55,6 @@ def parse_build_or_chat(raw: str):
     return "workflow", None
 
 
-def looks_like_build_task(task: str) -> bool:
-    """Heuristic when the router mis-labels CHAT (e.g. coding-language or stack switch)."""
-    t = task.lower()
-    if len(t.strip()) < 4:
-        return False
-    intent = (
-        "build ",
-        "create ",
-        "make a ",
-        "write a ",
-        "implement ",
-        "portfolio",
-        "website",
-        "web site",
-        "landing",
-        "write ",
-        "code ",
-        " app",
-        "debug",
-        "refactor",
-        "fix ",
-        "add ",
-        "api",
-        "script",
-        "html",
-        "css",
-        "project",
-        "feature",
-        "frontend",
-        "backend",
-        "site ",
-        "cli",
-    )
-    if any(x in t for x in intent):
-        return True
-    # Common programming languages / runtimes / frameworks (stack switches still = build).
-    tech = (
-        "javascript",
-        "typescript",
-        "python",
-        "golang",
-        "using go",
-        " in go",
-        " with go",
-        " rust",
-        "java",
-        "kotlin",
-        "swift",
-        "ruby",
-        "php",
-        "csharp",
-        "c#",
-        "c++",
-        "react",
-        "vue",
-        "svelte",
-        "angular",
-        "next.js",
-        "nextjs",
-        "nuxt",
-        "astro",
-        "remix",
-        "express",
-        "fastapi",
-        "django",
-        "flask",
-        "spring",
-        "rails",
-        "laravel",
-        "dotnet",
-        "node",
-        "bun",
-        "deno",
-        "tailwind",
-        "webpack",
-        "vite",
-        "postgres",
-        "mongodb",
-        "sqlite",
-    )
-    if any(x in t for x in tech):
-        return True
-    non_en = (
-        "créer",
-        "creer",
-        "sitio",
-        "página",
-        "pagina",
-        "construir",
-        "sitio web",
-        "código",
-        "codigo",
-        "proyecto",
-        "aplicación",
-        "aplicacion",
-        "site web",
-        "développer",
-        "developper",
-    )
-    return any(x in t for x in non_en)
-
-
 def resolve_turn_mode(
     *,
     session_directive: Optional[str],
@@ -178,6 +76,7 @@ def resolve_turn_mode(
     detect_stitch_frontend_heavy_task: Any,
     detect_prerequisite_first_task: Any,
     build_prerequisite_first_prompt: Any,
+    secondary_intent_classifier: Any = None,
 ) -> Dict[str, Any]:
     if session_directive == "build":
         trace_done(
@@ -223,7 +122,14 @@ def resolve_turn_mode(
         mode, chat_reply = parse_build_or_chat(router_raw)
         stitch_heavy_for_routing = detect_stitch_frontend_heavy_task(task_clean)
         if mode == "chat" and not detect_prerequisite_first_task(task_clean):
-            if looks_like_build_task(task_clean) or stitch_heavy_for_routing:
+            # Secondary lightweight classifier call replaces hardcoded heuristics.
+            llm_route = None
+            if secondary_intent_classifier is not None:
+                try:
+                    llm_route = secondary_intent_classifier(task_clean, mem_block)
+                except Exception:
+                    llm_route = None
+            if (llm_route or "").strip().upper() == "BUILD" or stitch_heavy_for_routing:
                 mode = "workflow"
                 chat_reply = None
 

@@ -343,6 +343,27 @@ cogem --codex-model o3
 
 If a flag is omitted, you can still set defaults with the environment variables in the table below.
 
+### SDK-backed model calls (OpenAI + Google GenAI)
+
+Cogem now supports official Python SDK backends for both model paths, with CLI fallback for compatibility.
+
+- `COGEM_CODEX_BACKEND=auto|sdk|cli` (default `auto`)
+- `COGEM_GEMINI_BACKEND=auto|sdk|cli` (default `auto`)
+- `COGEM_CODEX_SDK_MODEL` (default `gpt-4.1-mini`)
+- `COGEM_GEMINI_SDK_MODEL` (default `gemini-2.5-flash`)
+
+In `auto` mode, Cogem tries SDK first and falls back to CLI if unavailable.
+For SDK mode you need:
+- OpenAI: `OPENAI_API_KEY`
+- Google GenAI: `GEMINI_API_KEY` or `GOOGLE_API_KEY`
+
+Router secondary intent classifier:
+- `COGEM_SECONDARY_INTENT_LLM=1` (default on)
+- `COGEM_ROUTER_CLASSIFIER_MODEL` (default `gemini-2.5-flash-lite`)
+
+Async LLM execution path:
+- `COGEM_ASYNC_LLM=1` (default on): SDK calls run through async wrappers (`asyncio` + thread offload).
+
 ### In-session commands
 
 On an interactive terminal, the main task prompt uses **prompt-style completion**: type `/` or `@` and use **Tab** (or keep typing) to open a **two-column** menu (command/path + short description) with a **dark** theme. For colors closest to the Codex-style blue/grey look, use **Windows Terminal** or another **true-color** terminal. Set **`COGEM_NO_TRUE_COLOR=1`** if the menu colors look wrong on legacy consoles.
@@ -440,6 +461,7 @@ For **frontend-first** builds (websites, landing pages, dashboards, HTML/CSS/JS 
 **Disable** the Stitch stage entirely: `COGEM_STITCH=0` or `cogem --no-stitch`.
 
 **Manual mode** (default when no adapter succeeds): cogem prints a ready-to-paste **Stitch prompt**, then asks for your **exported HTML/CSS** (paste or `@path`). Non-interactive stdin skips the paste step; use `COGEM_STITCH_CLI` or `COGEM_STITCH_HTTP_URL` instead.
+When available, cogem also copies the generated Stitch prompt to your clipboard automatically (uses `pyperclip` if installed, else tkinter fallback).
 
 #### Stitch MCP (`stitch-mcp` on npm)
 

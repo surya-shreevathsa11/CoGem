@@ -17,6 +17,30 @@ from cogem.stitch.adapters import format_stitch_context_for_codex
 from cogem.task_intent import detect_prerequisite_first_task
 
 
+def _copy_to_clipboard(text: str) -> bool:
+    if not (text or "").strip():
+        return False
+    try:
+        import pyperclip  # type: ignore
+
+        pyperclip.copy(text)
+        return True
+    except Exception:
+        pass
+    try:
+        import tkinter as tk
+
+        root = tk.Tk()
+        root.withdraw()
+        root.clipboard_clear()
+        root.clipboard_append(text)
+        root.update()
+        root.destroy()
+        return True
+    except Exception:
+        return False
+
+
 def build_context_blocks(
     *,
     task: str,
@@ -213,6 +237,14 @@ def maybe_run_stitch_stage(
                 console.print()
                 console.print(stitch_prompt)
                 console.print()
+                if _copy_to_clipboard(stitch_prompt):
+                    console.print(
+                        Text(
+                            "Copied Stitch prompt to clipboard.",
+                            style=MUTED,
+                        )
+                    )
+                    console.print()
                 console.print(
                     Text(
                         "Stitch manual fallback.\n"

@@ -89,6 +89,27 @@ def boot_sequence() -> bool:
         exe = parts[0]
         return bool(shutil.which(exe) or os.path.isfile(exe))
 
+    def _openai_sdk_ready() -> bool:
+        if not os.environ.get("OPENAI_API_KEY", "").strip():
+            return False
+        try:
+            import openai  # noqa: F401
+            return True
+        except Exception:
+            return False
+
+    def _gemini_sdk_ready() -> bool:
+        if not (
+            os.environ.get("GEMINI_API_KEY", "").strip()
+            or os.environ.get("GOOGLE_API_KEY", "").strip()
+        ):
+            return False
+        try:
+            from google import genai  # noqa: F401
+            return True
+        except Exception:
+            return False
+
     sys.stdout.write("\n")
     sys.stdout.flush()
 
@@ -110,11 +131,13 @@ def boot_sequence() -> bool:
 
     _boot_run_step("initializing engine", None, min_spin=0.45)
 
-    if not _boot_run_step(
+    codex_ready = _boot_run_step(
         "loading codex",
-        lambda: _cmd_exists(os.environ.get("COGEM_CODEX_CMD", ""), "codex"),
+        lambda: _cmd_exists(os.environ.get("COGEM_CODEX_CMD", ""), "codex")
+        or _openai_sdk_ready(),
         min_spin=0.35,
-    ):
+    )
+    if not codex_ready:
         sys.stdout.write("\n")
         sys.stdout.flush()
         sys.stdout.write(
@@ -126,11 +149,13 @@ def boot_sequence() -> bool:
         sys.stdout.flush()
         return False
 
-    if not _boot_run_step(
+    gemini_ready = _boot_run_step(
         "loading gemini",
-        lambda: _cmd_exists(os.environ.get("COGEM_GEMINI_CMD", ""), "gemini"),
+        lambda: _cmd_exists(os.environ.get("COGEM_GEMINI_CMD", ""), "gemini")
+        or _gemini_sdk_ready(),
         min_spin=0.35,
-    ):
+    )
+    if not gemini_ready:
         sys.stdout.write("\n")
         sys.stdout.flush()
         sys.stdout.write(
@@ -149,6 +174,7 @@ def boot_sequence() -> bool:
 
 
 def main():
+    import asyncio
     import argparse
     import json
     import subprocess
@@ -194,6 +220,12 @@ def main():
     from cogem.task_intent import build_prerequisite_first_prompt, detect_prerequisite_first_task
     from cogem.write_safety import plan_safe_writes
     from cogem.command_policy import ALLOWED_EXECUTABLES, validate_local_command_args
+    from cogem.llm_clients import (
+        gemini_generate,
+        gemini_generate_async,
+        openai_generate,
+        openai_generate_async,
+    )
     from cogem.services.commands import handle_pre_pipeline_command
     from cogem.services.pipeline import build_context_blocks, maybe_run_stitch_stage
     from cogem.services.routing import parse_session_directive, resolve_turn_mode
@@ -310,6 +342,57 @@ def main():
         "notes": "",
     }
 
+    def _summarize_text_budget(text: str, max_chars: int) -> str:
+        t = (text or "").strip()
+        if len(t) <= max_chars:
+            return t
+        keep = max(120, max_chars - 40)
+        head = t[: keep // 2].rstrip()
+        tail = t[-(keep - len(head)) :].lstrip()
+        return f"{head}\n...[memory summarized]...\n{tail}"
+
+    def _prune_memory(mem: Dict[str, object]) -> Dict[str, object]:
+        max_items = max(3, int(os.environ.get("COGEM_MEMORY_MAX_ITEMS", "30")))
+        max_notes = max(400, int(os.environ.get("COGEM_MEMORY_MAX_NOTES_CHARS", "3000")))
+
+        out = dict(DEFAULT_MEMORY)
+        out.update(mem or {})
+        for key in ("stack", "constraints"):
+            vals = out.get(key)
+            if not isinstance(vals, list):
+                out[key] = []
+                continue
+            clean = [str(x).strip() for x in vals if str(x).strip()]
+            dedup: List[str] = []
+            seen: Set[str] = set()
+            for item in clean:
+                k = item.lower()
+                if k in seen:
+                    continue
+                seen.add(k)
+                dedup.append(item)
+            out[key] = dedup[-max_items:]
+
+        decisions = out.get("decisions")
+        if not isinstance(decisions, list):
+            out["decisions"] = []
+        else:
+            normalized = []
+            for d in decisions:
+                if isinstance(d, dict) and str(d.get("text", "")).strip():
+                    normalized.append(
+                        {
+                            "text": str(d.get("text", "")).strip(),
+                            "date": str(d.get("date", "")).strip(),
+                        }
+                    )
+                elif str(d).strip():
+                    normalized.append({"text": str(d).strip(), "date": ""})
+            out["decisions"] = normalized[-max_items:]
+
+        out["notes"] = _summarize_text_budget(str(out.get("notes", "")), max_notes)
+        return out
+
     def load_memory():
         if not os.path.isfile(MEMORY_PATH):
             save_memory(dict(DEFAULT_MEMORY))
@@ -327,6 +410,7 @@ def main():
         return out
 
     def save_memory(data):
+        data = _prune_memory(data if isinstance(data, dict) else dict(DEFAULT_MEMORY))
         with open(MEMORY_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             f.write("\n")
@@ -1599,12 +1683,76 @@ def main():
             raise
 
     def run_codex(prompt: str, status_msg: str) -> Tuple[str, str, int]:
+        backend = (os.environ.get("COGEM_CODEX_BACKEND", "auto").strip().lower() or "auto")
+        sdk_model = (
+            models.get("codex")
+            or os.environ.get("COGEM_CODEX_SDK_MODEL", "").strip()
+            or "gpt-4.1-mini"
+        )
+        timeout = _subprocess_timeout_sec() or 60
+
+        use_async = (
+            os.environ.get("COGEM_ASYNC_LLM", "1").strip().lower()
+            not in ("0", "false", "no", "off", "disabled")
+        )
+
+        def _run_sdk():
+            if use_async:
+                return asyncio.run(
+                    openai_generate_async(prompt, sdk_model, timeout_sec=timeout)
+                )
+            return openai_generate(prompt, sdk_model, timeout_sec=timeout)
+
+        if backend in ("auto", "sdk"):
+            try:
+                r = _run_with_ascii_progress(status_msg, _run_sdk) if status_msg else _run_sdk()
+                if r.returncode == 0:
+                    _record_tokens("codex", r.text or "")
+                    return r.text or "", "", 0
+                if backend == "sdk":
+                    return "", r.error or "OpenAI SDK call failed.", 1
+            except Exception as e:
+                if backend == "sdk":
+                    return "", str(e), 1
+
         stdout, stderr, rc = run_cmd(_codex_argv(prompt), status_msg)
         combined = (stdout or "") + "\n" + (stderr or "")
         _record_tokens("codex", combined)
         return stdout or "", stderr or "", rc
 
     def run_gemini(prompt: str, status_msg: str) -> Tuple[str, str, int]:
+        backend = (os.environ.get("COGEM_GEMINI_BACKEND", "auto").strip().lower() or "auto")
+        sdk_model = (
+            models.get("gemini")
+            or os.environ.get("COGEM_GEMINI_SDK_MODEL", "").strip()
+            or "gemini-2.5-flash"
+        )
+        timeout = _subprocess_timeout_sec() or 60
+
+        use_async = (
+            os.environ.get("COGEM_ASYNC_LLM", "1").strip().lower()
+            not in ("0", "false", "no", "off", "disabled")
+        )
+
+        def _run_sdk():
+            if use_async:
+                return asyncio.run(
+                    gemini_generate_async(prompt, sdk_model, timeout_sec=timeout)
+                )
+            return gemini_generate(prompt, sdk_model, timeout_sec=timeout)
+
+        if backend in ("auto", "sdk"):
+            try:
+                r = _run_with_ascii_progress(status_msg, _run_sdk) if status_msg else _run_sdk()
+                if r.returncode == 0:
+                    _record_tokens("gemini", r.text or "")
+                    return (r.text or "").strip(), "", 0
+                if backend == "sdk":
+                    return "", r.error or "Gemini SDK call failed.", 1
+            except Exception as e:
+                if backend == "sdk":
+                    return "", str(e), 1
+
         stdout, stderr, rc = run_cmd(_gemini_argv(prompt), status_msg)
         combined = (stdout or "") + "\n" + (stderr or "")
         _record_tokens("gemini", combined)
@@ -1718,6 +1866,18 @@ __TASK__
 ---
 """
 
+    ROUTER_SECONDARY_INTENT_PROMPT = """Classify this user turn for a coding CLI.
+Return exactly one word on line 1: BUILD or CHAT.
+
+BUILD: user asks for implementation or code/repo artifact changes.
+CHAT: informational/conversational only for this turn.
+
+User:
+---
+__TASK__
+---
+"""
+
     _PERSIST_LINE = re.compile(
         r"^PERSIST\s+(note|stack|constraints|decision)\s*:\s*(.+?)\s*$",
         re.I,
@@ -1733,6 +1893,36 @@ __TASK__
         return ROUTER_TEMPLATE.replace("__MEMORY__", mem_ctx).replace(
             "__TASK__", task_block
         )
+
+    def classify_intent_secondary(task_text: str, _mem_block: str) -> Optional[str]:
+        enabled = (
+            os.environ.get("COGEM_SECONDARY_INTENT_LLM", "1").strip().lower()
+            not in ("0", "false", "no", "off", "disabled")
+        )
+        if not enabled:
+            return None
+        model = (
+            os.environ.get("COGEM_ROUTER_CLASSIFIER_MODEL", "").strip()
+            or "gemini-2.5-flash-lite"
+        )
+        timeout = _subprocess_timeout_sec() or 30
+        prompt = ROUTER_SECONDARY_INTENT_PROMPT.replace("__TASK__", task_text or "")
+        use_async = (
+            os.environ.get("COGEM_ASYNC_LLM", "1").strip().lower()
+            not in ("0", "false", "no", "off", "disabled")
+        )
+        if use_async:
+            r = asyncio.run(
+                gemini_generate_async(prompt, model, timeout_sec=timeout)
+            )
+        else:
+            r = gemini_generate(prompt, model, timeout_sec=timeout)
+        if r.returncode != 0:
+            return None
+        first = ((r.text or "").strip().splitlines() or [""])[0].strip().upper()
+        if first in ("BUILD", "CHAT"):
+            return first
+        return None
 
     def runtime_stitch_capabilities_block() -> str:
         """
@@ -2698,6 +2888,7 @@ No markdown, no other text."""
                 detect_stitch_frontend_heavy_task=detect_stitch_frontend_heavy_task,
                 detect_prerequisite_first_task=detect_prerequisite_first_task,
                 build_prerequisite_first_prompt=build_prerequisite_first_prompt,
+                secondary_intent_classifier=classify_intent_secondary,
             )
             if route["stop_turn"]:
                 continue
