@@ -291,5 +291,7 @@ def maybe_run_stitch_stage(
     return {
         "stitch_block": stitch_block,
         "stitch_rules_extra": stitch_rules_extra,
+        "stitch_frontend_heavy": str(bool(stitch_frontend_heavy)),
+        "frontend_detected": str(bool(frontend_detected)),
     }
 

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
-import re
+import json
+import hashlib
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 
 _DEFAULT_INDEX_DIRNAME = ".cogem/vector_db"
@@ -124,6 +125,69 @@ class VectorIndex:
         os.makedirs(self.index_dir, exist_ok=True)
         return lancedb.connect(self.index_dir)
 
+    def _manifest_path(self) -> str:
+        return os.path.join(self.index_dir, "manifest.json")
+
+    def _file_hash(self, abs_path: str) -> str:
+        try:
+            with open(abs_path, "rb") as f:
+                raw = f.read(self.config.max_file_bytes)
+            return hashlib.sha256(raw).hexdigest()
+        except OSError:
+            return ""
+
+    def _current_manifest(self) -> Dict[str, str]:
+        out: Dict[str, str] = {}
+        idx_root = os.path.realpath(self.index_dir)
+        for fp in _iter_source_files(
+            self.repo_root,
+            include_exts=self.config.include_exts,
+            max_bytes_per_file=self.config.max_file_bytes,
+        ):
+            try:
+                rp = os.path.realpath(fp)
+                if rp == idx_root or rp.startswith(idx_root + os.sep):
+                    continue
+            except OSError:
+                continue
+            rel = os.path.relpath(fp, self.repo_root).replace("\\", "/")
+            h = self._file_hash(fp)
+            if h:
+                out[rel] = h
+        return out
+
+    def _load_manifest(self) -> Dict[str, str]:
+        p = self._manifest_path()
+        if not os.path.isfile(p):
+            return {}
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return {str(k): str(v) for k, v in data.items()}
+        except Exception:
+            return {}
+        return {}
+
+    def _save_manifest(self, manifest: Dict[str, str]) -> None:
+        p = self._manifest_path()
+        try:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2, ensure_ascii=False)
+                f.write("\n")
+        except OSError:
+            return
+
+    def _index_is_stale(self) -> bool:
+        if self.config.rebuild:
+            return True
+        old = self._load_manifest()
+        if not old:
+            return True
+        cur = self._current_manifest()
+        return old != cur
+
     def _load_embedder(self):
         from sentence_transformers import SentenceTransformer
 
@@ -186,10 +250,16 @@ class VectorIndex:
             except Exception:
                 pass
 
-        try:
-            return conn.open_table(table_name)
-        except Exception:
-            pass
+        if not self._index_is_stale():
+            try:
+                return conn.open_table(table_name)
+            except Exception:
+                pass
+        else:
+            try:
+                conn.drop_table(table_name)
+            except Exception:
+                pass
 
         rows = self._build_chunks()
         if not rows:
@@ -202,6 +272,7 @@ class VectorIndex:
         # Convert dict rows to Arrow via schema inference.
         arr = pa.Table.from_pylist(rows)
         table = conn.create_table(table_name, arr)
+        self._save_manifest(self._current_manifest())
         return table
 
     def query(self, task: str) -> List[dict]:
@@ -281,4 +352,11 @@ def semantic_repo_context_block_for_task(
         total += len(block)
 
     return "\n".join(parts).strip()
+
+
+def semantic_search_repo(
+    repo_root: str, task: str, config: VectorIndexConfig
+) -> List[dict]:
+    idx = VectorIndex(repo_root, config)
+    return idx.query(task)
 

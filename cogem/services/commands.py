@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import json
 from typing import Any, Dict, Tuple
 
 
@@ -298,6 +299,138 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
                     clip += "..."
                 console.print(Text(clip, style=LOG_WARN))
         console.print()
+        return True, False
+
+    if task.startswith("/mcp/plugins"):
+        from cogem.mcp_plugins import list_plugins
+
+        names = list_plugins()
+        section_rule("MCP plugins")
+        console.print()
+        if names:
+            for n in names:
+                console.print(f"- {n}")
+        else:
+            console.print(Text("No MCP plugins configured.", style=MUTED))
+            console.print(
+                Text(
+                    "Set COGEM_MCP_<NAME>_CMD/ARGS (jira/sentry/datadog/dbschema) "
+                    "or COGEM_MCP_PLUGINS_JSON.",
+                    style=MUTED,
+                )
+            )
+        console.print()
+        return True, False
+
+    if task.startswith("/mcp/tools"):
+        rest = task[len("/mcp/tools") :].strip()
+        if not rest:
+            console.print(Text("Usage: /mcp/tools <plugin>", style=MUTED))
+            return True, False
+        from cogem.mcp_plugins import list_tools
+
+        ok, out = list_tools(rest)
+        section_rule(f"MCP tools: {rest}")
+        console.print()
+        if ok:
+            console.print(out)
+        else:
+            console.print(Text(out, style=LOG_WARN))
+        console.print()
+        return True, False
+
+    if task.startswith("/mcp/call"):
+        rest = task[len("/mcp/call") :].strip()
+        if not rest:
+            console.print(
+                Text("Usage: /mcp/call <plugin> <tool> [json-args]", style=MUTED)
+            )
+            return True, False
+        parts = rest.split(maxsplit=2)
+        if len(parts) < 2:
+            console.print(
+                Text("Usage: /mcp/call <plugin> <tool> [json-args]", style=MUTED)
+            )
+            return True, False
+        plugin, tool = parts[0], parts[1]
+        args_obj = {}
+        if len(parts) >= 3 and parts[2].strip():
+            try:
+                args_obj = json.loads(parts[2].strip())
+                if not isinstance(args_obj, dict):
+                    console.print(Text("json-args must be a JSON object.", style=LOG_WARN))
+                    return True, False
+            except json.JSONDecodeError:
+                console.print(Text("Invalid json-args JSON.", style=LOG_WARN))
+                return True, False
+        from cogem.mcp_plugins import call_tool
+
+        ok, out = call_tool(plugin, tool, args_obj)
+        section_rule(f"MCP call: {plugin}.{tool}")
+        console.print()
+        if ok:
+            console.print(out or "(empty result)")
+        else:
+            console.print(Text(out, style=LOG_WARN))
+        console.print()
+        return True, False
+
+    if task.startswith("/rag/search"):
+        rest = task[len("/rag/search") :].strip()
+        if not rest:
+            console.print(Text("Usage: /rag/search <query>", style=MUTED))
+            return True, False
+        try:
+            from cogem.vector_index import VectorIndexConfig, semantic_search_repo
+
+            rows = semantic_search_repo(
+                repo_root=ctx["_repo_root"](),
+                task=rest,
+                config=VectorIndexConfig(
+                    enabled=True,
+                    rebuild=bool(
+                        os.environ.get("COGEM_VECTOR_REBUILD", "0").strip().lower()
+                        in ("1", "true", "yes", "on")
+                    ),
+                    top_k=int(os.environ.get("COGEM_VECTOR_TOP_K", "8")),
+                    max_chunk_chars=int(os.environ.get("COGEM_VECTOR_CHUNK_CHARS", "2500")),
+                    max_context_chars=int(
+                        os.environ.get("COGEM_AUTO_REPO_CONTEXT_MAX_CHARS", "8000")
+                    ),
+                ),
+            )
+        except Exception as e:
+            section_rule("RAG search")
+            console.print()
+            console.print(Text(f"RAG unavailable: {e}", style=LOG_WARN))
+            console.print(
+                Text(
+                    "Install optional deps: pip install \".[vector]\"",
+                    style=MUTED,
+                )
+            )
+            console.print()
+            return True, False
+
+        section_rule("RAG search results")
+        console.print()
+        if not rows:
+            console.print(Text("No semantic matches found.", style=MUTED))
+            console.print()
+            return True, False
+        shown = 0
+        for r in rows:
+            p = str(r.get("path", "")).strip()
+            t = str(r.get("text", "")).strip()
+            if not p or not t:
+                continue
+            shown += 1
+            preview = "\n".join(t.splitlines()[:24]).strip()
+            console.print(Text(f"### {p}", style=MUTED))
+            console.print(preview)
+            console.print()
+            if shown >= int(os.environ.get("COGEM_VECTOR_TOP_K", "8")):
+                break
         return True, False
 
     if task.startswith("/pdf"):

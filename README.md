@@ -433,6 +433,10 @@ While Cogem is running, you can change models without restarting:
 | `/pdf` | Generate a PDF from provided text (plain-text layout; uses `reportlab`) |
 | `/github/info <url or owner/repo>` | Show public GitHub repository metadata (description, stars, language, branch) |
 | `/github/clone <url or owner/repo> [dest]` | Clone repository into local folder (`dest` optional) |
+| `/mcp/plugins` | List configured MCP plugins |
+| `/mcp/tools <plugin>` | List tools published by a plugin |
+| `/mcp/call <plugin> <tool> [json-args]` | Invoke an MCP tool with JSON arguments |
+| `/rag/search <query>` | Run semantic search over the local full-repo vector index |
 
 ---
 ## Automated Validation Loop (Execution)
@@ -511,6 +515,22 @@ For **frontend-first** builds (websites, landing pages, dashboards, HTML/CSS/JS 
 **Manual mode** (default when no adapter succeeds): cogem prints a ready-to-paste **Stitch prompt**, then asks for your **exported HTML/CSS** (paste or `@path`). Non-interactive stdin skips the paste step; use `COGEM_STITCH_CLI` or `COGEM_STITCH_HTTP_URL` instead.
 When available, cogem also copies the generated Stitch prompt to your clipboard automatically (uses `pyperclip` if installed, else tkinter fallback).
 
+### Multimodal UI Validation (Vision Pass)
+
+For frontend-heavy turns, cogem can run a visual validation stage after files are written:
+
+1. Capture a headless screenshot (Playwright; static `index.html` style outputs).
+2. Send screenshot + task intent to Gemini Vision for layout review.
+3. Feed visual findings into a final Codex fix pass.
+
+Env controls:
+- `COGEM_VISUAL_REVIEW=1` (default on)
+- `COGEM_VISUAL_REVIEW_MODEL` (default `gemini-2.5-pro`)
+
+Requirements for screenshot capture:
+- `pip install playwright`
+- `playwright install chromium`
+
 #### Stitch MCP (`stitch-mcp` on npm)
 
 The community **stitch-mcp** package is an MCP **server** that talks to Googleâ€™s Stitch API (with `gcloud` auth). Cogem acts as a minimal MCP **client** over stdio and calls the generate tool automatically for frontend tasks (unless you disable MCP):
@@ -524,6 +544,79 @@ The community **stitch-mcp** package is an MCP **server** that talks to Googleâ€
 If MCP fails (auth, API, or tool schema), cogem **falls back** to manual export as before. Tool name defaults to `generate_screen_from_text`; override with `COGEM_STITCH_MCP_TOOL` if your server exposes a different name.
 
 There is **no guaranteed public Stitch API** in cogem: integration is **pluggable** via env vars (see table below). Validity of any HTTP/CLI tool is **your** responsibility.
+
+---
+
+## Deep MCP Plugin Integration
+
+Beyond Stitch, Cogem can connect to external MCP tool servers (Jira, Sentry, Datadog, DB schema, custom tools).
+
+### Plugin configuration
+
+Built-in aliases (set command + optional args):
+- `COGEM_MCP_JIRA_CMD`, `COGEM_MCP_JIRA_ARGS`
+- `COGEM_MCP_SENTRY_CMD`, `COGEM_MCP_SENTRY_ARGS`
+- `COGEM_MCP_DATADOG_CMD`, `COGEM_MCP_DATADOG_ARGS`
+- `COGEM_MCP_DBSCHEMA_CMD`, `COGEM_MCP_DBSCHEMA_ARGS`
+
+Custom registry JSON:
+- `COGEM_MCP_PLUGINS_JSON`
+
+Example:
+
+```json
+{
+  "jira": { "cmd": "npx", "args": "-y your-jira-mcp", "timeout_sec": 60 },
+  "sentry": { "cmd": "npx", "args": "-y your-sentry-mcp" }
+}
+```
+
+### Plugin command flow
+
+1. `/mcp/plugins`
+2. `/mcp/tools jira`
+3. `/mcp/call jira get_ticket {"id":"402"}`
+
+This enables workflows like: inspect a Jira ticket, fetch Sentry traces, read DB schema context, then implement + validate fixes in one Cogem session.
+
+---
+
+## Deep Semantic Context (Full-Repo RAG)
+
+Cogem supports local vector retrieval to find related logic beyond exact symbols/imports.
+
+- Backend: LanceDB + sentence-transformers (local embeddings)
+- Scope: full repo source traversal (configurable extensions)
+- Retrieval: semantic nearest-neighbor chunks injected into build context
+- Fallback: if vector deps are unavailable, Cogem falls back to structural repo context
+
+### What this helps with
+
+- "Where else do we handle authentication?"
+- "Show similar styling/component patterns."
+- "Find related logic that does not share the same symbol names."
+
+### RAG commands
+
+- `/rag/search <query>`: inspect semantic matches directly
+
+### Index lifecycle
+
+- Index is stored under `.cogem/vector_db`
+- Cogem maintains a file-hash manifest and only rebuilds the index when tracked source content changes (or when forced)
+
+### Controls
+
+- `COGEM_VECTOR_RAG=1` enable vector retrieval for build context
+- `COGEM_VECTOR_REBUILD=1` force rebuild
+- `COGEM_VECTOR_TOP_K` number of semantic matches
+- `COGEM_VECTOR_CHUNK_CHARS` chunk size
+
+Install optional deps:
+
+```bash
+pip install ".[vector]"
+```
 
 ---
 
@@ -578,6 +671,16 @@ There is **no guaranteed public Stitch API** in cogem: integration is **pluggabl
 | `COGEM_STITCH_MCP_PROMPT_KEY` | JSON argument key for the prompt (default `prompt`) |
 | `COGEM_STITCH_MCP_TOOL_ARGS_JSON` | Optional extra JSON object merged into tool `arguments` |
 | `COGEM_STITCH_MCP_TIMEOUT_SEC` | Max seconds for the MCP round-trip (default `300`) |
+| `COGEM_MCP_JIRA_CMD` | MCP server command for Jira plugin alias |
+| `COGEM_MCP_JIRA_ARGS` | Args for Jira MCP server command |
+| `COGEM_MCP_SENTRY_CMD` | MCP server command for Sentry plugin alias |
+| `COGEM_MCP_SENTRY_ARGS` | Args for Sentry MCP server command |
+| `COGEM_MCP_DATADOG_CMD` | MCP server command for Datadog plugin alias |
+| `COGEM_MCP_DATADOG_ARGS` | Args for Datadog MCP server command |
+| `COGEM_MCP_DBSCHEMA_CMD` | MCP server command for DB schema plugin alias |
+| `COGEM_MCP_DBSCHEMA_ARGS` | Args for DB schema MCP server command |
+| `COGEM_MCP_PLUGINS_JSON` | JSON registry for arbitrary MCP plugins (`name -> {cmd,args,env,timeout_sec}`) |
+| `COGEM_MCP_TIMEOUT_SEC` | Default timeout for MCP plugin alias servers (default `60`) |
 
 ---
 

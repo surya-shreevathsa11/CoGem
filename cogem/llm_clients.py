@@ -70,3 +70,45 @@ async def gemini_generate_async(
 ) -> LLMResult:
     return await asyncio.to_thread(gemini_generate, prompt, model, timeout_sec)
 
+
+def gemini_generate_with_image(
+    prompt: str,
+    model: str,
+    image_path: str,
+    timeout_sec: Optional[int] = None,
+) -> LLMResult:
+    try:
+        from google import genai
+        from google.genai import types
+    except Exception as e:
+        return LLMResult("", f"Google GenAI SDK import failed: {e}", 1)
+    try:
+        with open(image_path, "rb") as f:
+            img = f.read()
+        client = genai.Client()
+        rsp = client.models.generate_content(
+            model=model,
+            contents=[
+                prompt,
+                types.Part.from_bytes(data=img, mime_type="image/png"),
+            ],
+            config={"http_options": {"timeout": (timeout_sec or 60) * 1000}},
+        )
+        text = (getattr(rsp, "text", None) or "").strip()
+        if not text:
+            text = str(rsp)
+        return LLMResult(text, "", 0)
+    except Exception as e:
+        return LLMResult("", str(e), 1)
+
+
+async def gemini_generate_with_image_async(
+    prompt: str,
+    model: str,
+    image_path: str,
+    timeout_sec: Optional[int] = None,
+) -> LLMResult:
+    return await asyncio.to_thread(
+        gemini_generate_with_image, prompt, model, image_path, timeout_sec
+    )
+

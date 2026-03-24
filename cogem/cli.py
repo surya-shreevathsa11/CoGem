@@ -223,12 +223,15 @@ def main():
     from cogem.llm_clients import (
         gemini_generate,
         gemini_generate_async,
+        gemini_generate_with_image,
+        gemini_generate_with_image_async,
         openai_generate,
         openai_generate_async,
     )
     from cogem.services.commands import handle_pre_pipeline_command
     from cogem.services.pipeline import build_context_blocks, maybe_run_stitch_stage
     from cogem.services.routing import parse_session_directive, resolve_turn_mode
+    from cogem.visual_review import capture_frontend_screenshot
 
     _ap = argparse.ArgumentParser(
         prog="cogem",
@@ -1924,6 +1927,55 @@ __TASK__
             return first
         return None
 
+    def run_visual_ui_review(task_text: str) -> Optional[str]:
+        enabled = (
+            os.environ.get("COGEM_VISUAL_REVIEW", "1").strip().lower()
+            not in ("0", "false", "no", "off", "disabled")
+        )
+        if not enabled:
+            return None
+        screenshot_path = os.path.join(ROOT, ".cogem_visual_review.png")
+        ok, err = capture_frontend_screenshot(_repo_root(), screenshot_path)
+        if not ok:
+            trace_done(f"Visual review skipped: {err}")
+            return None
+        model = (
+            models.get("gemini")
+            or os.environ.get("COGEM_VISUAL_REVIEW_MODEL", "").strip()
+            or "gemini-2.5-pro"
+        )
+        timeout = _subprocess_timeout_sec() or 60
+        prompt = (
+            "You are a strict UI reviewer. Analyze this screenshot for layout/UI defects only: "
+            "overlapping elements, clipping, broken spacing, alignment issues, unreadable contrast, "
+            "mobile/desktop responsiveness hints, and visual regressions. "
+            "Return concise actionable fixes for HTML/CSS/JS."
+            f"\n\nTask intent:\n{task_text}"
+        )
+        use_async = (
+            os.environ.get("COGEM_ASYNC_LLM", "1").strip().lower()
+            not in ("0", "false", "no", "off", "disabled")
+        )
+        if use_async:
+            vr = asyncio.run(
+                gemini_generate_with_image_async(
+                    prompt, model, screenshot_path, timeout_sec=timeout
+                )
+            )
+        else:
+            vr = gemini_generate_with_image(
+                prompt, model, screenshot_path, timeout_sec=timeout
+            )
+        try:
+            if os.path.isfile(screenshot_path):
+                os.remove(screenshot_path)
+        except Exception:
+            pass
+        if vr.returncode != 0:
+            trace_done("Visual review failed; continuing without image-based feedback.")
+            return None
+        return (vr.text or "").strip() or None
+
     def runtime_stitch_capabilities_block() -> str:
         """
         Help the router/chat model answer correctly about Stitch availability.
@@ -1988,6 +2040,10 @@ __TASK__
             "- `/run <cmd>`: run a local command with sandboxed allowlist; may require permission.\n"
             "- `/github/info <url|owner/repo>`: fetch public GitHub repo metadata.\n"
             "- `/github/clone <url|owner/repo> [dest]`: clone a GitHub repo into current dir.\n"
+            "- `/mcp/plugins`: list configured MCP plugins.\n"
+            "- `/mcp/tools <plugin>`: list tools published by an MCP plugin.\n"
+            "- `/mcp/call <plugin> <tool> [json]`: call a plugin tool with JSON args.\n"
+            "- `/rag/search <query>`: semantic repo search (vector index; optional deps).\n"
             "\nLocal command execution note: `/run`, `/test`, `/lint` use a permission gate "
             f"({allow_local_hint})."
         )
@@ -2009,6 +2065,10 @@ __TASK__
         ("/run", "Run a local command (permission + allowlist enforced)"),
         ("/github/info", "Inspect public GitHub repository details"),
         ("/github/clone", "Clone a GitHub repo into current directory"),
+        ("/mcp/plugins", "List configured MCP plugins"),
+        ("/mcp/tools", "List tools from an MCP plugin"),
+        ("/mcp/call", "Call a tool on an MCP plugin"),
+        ("/rag/search", "Semantic search across full repo index"),
     )
     _MAX_AT_COMPLETIONS = 500
 
@@ -2732,6 +2792,8 @@ No markdown, no other text."""
                         "/run <cmd>   "
                         "/github/info <url|owner/repo>   "
                         "/github/clone <url|owner/repo> [dest]   "
+                        "/mcp/plugins /mcp/tools <plugin> /mcp/call <plugin> <tool> [json]   "
+                        "/rag/search <query>   "
                         "@path @folder   (Tab completes / and @)",
                         style=MUTED,
                     )
@@ -2955,6 +3017,12 @@ No markdown, no other text."""
             )
             stitch_block = stitch_ctx["stitch_block"]
             stitch_rules_extra = stitch_ctx["stitch_rules_extra"]
+            frontend_detected_for_turn = (
+                stitch_ctx.get("frontend_detected", "False").lower() == "true"
+            )
+            stitch_heavy_for_turn = (
+                stitch_ctx.get("stitch_frontend_heavy", "False").lower() == "true"
+            )
 
             # ---------- generate ----------
 
@@ -3114,6 +3182,52 @@ Return ONLY FILE: blocks (add/update files as needed).
                 trace_done(
                     "Files and any auto-runs are done; I'm asking Codex to fold this project into long-lived memory next."
                 )
+
+                run_visual = frontend_detected_for_turn or stitch_heavy_for_turn
+                if run_visual:
+                    trace_doing(
+                        "Running visual UI validation (screenshot + Gemini vision review)."
+                    )
+                    visual_review = run_visual_ui_review(task_clean)
+                    if visual_review:
+                        section_rule("Visual Review (Gemini Vision)")
+                        console.print()
+                        console.print(visual_review)
+                        console.print()
+                        trace_doing(
+                            "Applying visual-review feedback with a final Codex fix pass."
+                        )
+                        visual_fix_prompt = f"""
+{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}
+
+TASK:
+{task_clean}
+
+Visual Review Feedback:
+{visual_review}
+
+Fix the project to resolve visual/layout issues.
+Return ONLY FILE: blocks.
+"""
+                        vraw, verr, vrc = run_codex(
+                            visual_fix_prompt, "Codex: applying visual review fixes..."
+                        )
+                        if vrc == 0:
+                            vfiles = extract_files(vraw)
+                            if vfiles:
+                                _ = write_files(vfiles)
+                                trace_done(
+                                    "Visual review fixes applied from Codex FILE blocks."
+                                )
+                            else:
+                                trace_done(
+                                    "Visual fix pass returned no FILE blocks; skipped."
+                                )
+                        else:
+                            if (verr or "").strip():
+                                console.print(Text((verr or "").strip()[:800], style=LOG_WARN))
+                            trace_done("Visual fix pass failed; keeping prior project state.")
+
                 auto_memory_after_project_session(
                     memory, task, ", ".join(sorted(files.keys()))
                 )
