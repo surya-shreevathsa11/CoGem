@@ -55,7 +55,7 @@ def parse_build_or_chat(raw: str):
     return "workflow", None
 
 
-def resolve_turn_mode(
+async def resolve_turn_mode(
     *,
     session_directive: Optional[str],
     task_clean: str,
@@ -88,7 +88,7 @@ def resolve_turn_mode(
         trace_doing(
             "I'm having Codex classify this turn: full build pipeline versus a direct conversational reply (using your text and saved context)."
         )
-        router_raw, router_err, router_rc = run_codex(
+        router_raw, router_err, router_rc = await run_codex(
             build_router_prompt(
                 task_clean,
                 mem_block
@@ -126,7 +126,7 @@ def resolve_turn_mode(
             llm_route = None
             if secondary_intent_classifier is not None:
                 try:
-                    llm_route = secondary_intent_classifier(task_clean, mem_block)
+                    llm_route = await secondary_intent_classifier(task_clean, mem_block)
                 except Exception:
                     llm_route = None
             if (llm_route or "").strip().upper() == "BUILD" or stitch_heavy_for_routing:
@@ -142,7 +142,7 @@ def resolve_turn_mode(
             "Your message asks for something before building; answering that first "
             "(skipping Stitch and the full code pipeline this turn)."
         )
-        pr_raw, pr_err, pr_rc = run_codex(
+        pr_raw, pr_err, pr_rc = await run_codex(
             build_prerequisite_first_prompt(task_clean, mem_block),
             "Codex: answering prerequisite question first...",
         )

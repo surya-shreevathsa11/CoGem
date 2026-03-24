@@ -173,7 +173,7 @@ def boot_sequence() -> bool:
     return True
 
 
-def main():
+async def main():
     import asyncio
     import argparse
     import json
@@ -299,7 +299,7 @@ def main():
         in ("1", "true", "yes", "on")
     )
 
-    if not boot_sequence():
+    if not await asyncio.to_thread(boot_sequence):
         raise SystemExit(1)
 
     # Accent (rose) + Claude-like neutrals (dim rules, soft reasoning frames)
@@ -1078,17 +1078,17 @@ def main():
         await trace_done_async(f"DONE:  {label}  ({elapsed:.1f}s)")
         return out
 
-    def run_cmd(
+    async def run_cmd(
         cmd: List[str], status_msg: Optional[str] = None
     ) -> Tuple[str, str, int]:
         to = _subprocess_timeout_sec()
 
-        def _run():
+        async def _run_async():
             kw = {"capture_output": True, "text": True}
             if to is not None:
                 kw["timeout"] = to
             try:
-                return subprocess.run(cmd, **kw)
+                return await asyncio.to_thread(subprocess.run, cmd, **kw)
             except subprocess.TimeoutExpired:
                 _say(
                     f"[cogem] ERROR: subprocess timed out after {to}s "
@@ -1097,7 +1097,7 @@ def main():
                 raise
 
         if status_msg:
-            result = _run_with_ascii_progress(status_msg, _run)
+            result = await _run_with_ascii_progress_async(status_msg, _run_async)
             if result.returncode != 0:
                 _say(
                     f"[cogem] WARNING: process exited with code {result.returncode}"
@@ -1107,7 +1107,7 @@ def main():
                     clip = err[:800] + ("..." if len(err) > 800 else "")
                     console.print(Text(f"  stderr: {clip}", style=LOG_WARN))
         else:
-            result = _run()
+            result = await _run_async()
         return result.stdout or "", result.stderr or "", result.returncode
 
     def _auto_permissions_from_env() -> Optional[bool]:
@@ -1767,7 +1767,7 @@ def main():
             )
             raise
 
-    def run_codex(prompt: str, status_msg: str) -> Tuple[str, str, int]:
+    async def run_codex(prompt: str, status_msg: str) -> Tuple[str, str, int]:
         backend = (os.environ.get("COGEM_CODEX_BACKEND", "auto").strip().lower() or "auto")
         sdk_model = (
             models.get("codex")
@@ -1791,11 +1791,11 @@ def main():
             try:
                 if use_async:
                     if status_msg:
-                        r = asyncio.run(
-                            _run_with_ascii_progress_async(status_msg, _run_sdk_async)
+                        r = await _run_with_ascii_progress_async(
+                            status_msg, _run_sdk_async
                         )
                     else:
-                        r = asyncio.run(_run_sdk_async())
+                        r = await _run_sdk_async()
                 else:
                     r = (
                         _run_with_ascii_progress(status_msg, _run_sdk_sync)
@@ -1811,12 +1811,12 @@ def main():
                 if backend == "sdk":
                     return "", str(e), 1
 
-        stdout, stderr, rc = run_cmd(_codex_argv(prompt), status_msg)
+        stdout, stderr, rc = await run_cmd(_codex_argv(prompt), status_msg)
         combined = (stdout or "") + "\n" + (stderr or "")
         _record_tokens("codex", combined)
         return stdout or "", stderr or "", rc
 
-    def run_gemini(prompt: str, status_msg: str) -> Tuple[str, str, int]:
+    async def run_gemini(prompt: str, status_msg: str) -> Tuple[str, str, int]:
         backend = (os.environ.get("COGEM_GEMINI_BACKEND", "auto").strip().lower() or "auto")
         sdk_model = (
             models.get("gemini")
@@ -1840,11 +1840,11 @@ def main():
             try:
                 if use_async:
                     if status_msg:
-                        r = asyncio.run(
-                            _run_with_ascii_progress_async(status_msg, _run_sdk_async)
+                        r = await _run_with_ascii_progress_async(
+                            status_msg, _run_sdk_async
                         )
                     else:
-                        r = asyncio.run(_run_sdk_async())
+                        r = await _run_sdk_async()
                 else:
                     r = (
                         _run_with_ascii_progress(status_msg, _run_sdk_sync)
@@ -1860,7 +1860,7 @@ def main():
                 if backend == "sdk":
                     return "", str(e), 1
 
-        stdout, stderr, rc = run_cmd(_gemini_argv(prompt), status_msg)
+        stdout, stderr, rc = await run_cmd(_gemini_argv(prompt), status_msg)
         combined = (stdout or "") + "\n" + (stderr or "")
         _record_tokens("gemini", combined)
         return (stdout or "").strip(), stderr or "", rc
@@ -2049,7 +2049,7 @@ __CODE__
             "__TASK__", task_block
         )
 
-    def classify_intent_secondary(task_text: str, _mem_block: str) -> Optional[str]:
+    async def classify_intent_secondary(task_text: str, _mem_block: str) -> Optional[str]:
         enabled = (
             os.environ.get("COGEM_SECONDARY_INTENT_LLM", "1").strip().lower()
             not in ("0", "false", "no", "off", "disabled")
@@ -2067,9 +2067,7 @@ __CODE__
             not in ("0", "false", "no", "off", "disabled")
         )
         if use_async:
-            r = asyncio.run(
-                gemini_generate_async(prompt, model, timeout_sec=timeout)
-            )
+            r = await gemini_generate_async(prompt, model, timeout_sec=timeout)
         else:
             r = gemini_generate(prompt, model, timeout_sec=timeout)
         if r.returncode != 0:
@@ -2085,7 +2083,7 @@ __CODE__
             .replace("__CODE__", code_text or "")
         )
 
-    def run_visual_ui_review(task_text: str) -> Optional[str]:
+    async def run_visual_ui_review(task_text: str) -> Optional[str]:
         enabled = (
             os.environ.get("COGEM_VISUAL_REVIEW", "1").strip().lower()
             not in ("0", "false", "no", "off", "disabled")
@@ -2115,10 +2113,8 @@ __CODE__
             not in ("0", "false", "no", "off", "disabled")
         )
         if use_async:
-            vr = asyncio.run(
-                gemini_generate_with_image_async(
-                    prompt, model, screenshot_path, timeout_sec=timeout
-                )
+            vr = await gemini_generate_with_image_async(
+                prompt, model, screenshot_path, timeout_sec=timeout
             )
         else:
             vr = gemini_generate_with_image(
@@ -2586,14 +2582,14 @@ __CODE__
             key_bindings=_task_prompt_keys,
         )
 
-    def read_task_line(prompt: str = "What would you like to do? ") -> str:
+    async def read_task_line(prompt: str = "What would you like to do? ") -> str:
         if task_prompt_session is not None:
             try:
-                return task_prompt_session.prompt(prompt).strip()
+                return (await task_prompt_session.prompt_async(prompt)).strip()
             except (EOFError, KeyboardInterrupt):
                 raise
         prompt_label = Text(prompt, style=TITLE)
-        return console.input(prompt_label).strip()
+        return (await asyncio.to_thread(console.input, prompt_label)).strip()
 
     def extract_persist_directives(text: str):
         """Strip PERSIST lines from model text; return (visible_reply, [(kind, value), ...])."""
@@ -2680,7 +2676,7 @@ No markdown, no other text."""
         if persists:
             apply_persist_directives(mem, persists)
 
-    def auto_memory_after_code_session(mem, task: str, summary: str) -> None:
+    async def auto_memory_after_code_session(mem, task: str, summary: str) -> None:
         t = task.replace("__", "")[:6000]
         s = summary.replace("__", "")[:12000]
         prompt = (
@@ -2690,7 +2686,7 @@ No markdown, no other text."""
             "[cogem] Saving session memory (extra Codex call) — "
             "you will see START/DONE lines below; this is not stuck."
         )
-        out, _err, rc = run_codex(
+        out, _err, rc = await run_codex(
             prompt,
             "Codex: updating persistent context...",
         )
@@ -2705,7 +2701,7 @@ No markdown, no other text."""
             auto_memory_from_text(mem, out)
         _say("[cogem] Session memory step finished.")
 
-    def auto_memory_after_project_session(mem, task: str, file_names: str) -> None:
+    async def auto_memory_after_project_session(mem, task: str, file_names: str) -> None:
         t = task.replace("__", "")[:6000]
         f = file_names.replace("__", "")[:4000]
         prompt = MEMORY_EXTRACT_PROJECT.replace("__TASK__", t).replace("__FILES__", f)
@@ -2713,7 +2709,7 @@ No markdown, no other text."""
             "[cogem] Saving session memory (extra Codex call) — "
             "wait for DONE before the next prompt."
         )
-        out, _err, rc = run_codex(
+        out, _err, rc = await run_codex(
             prompt,
             "Codex: updating persistent context...",
         )
@@ -3004,7 +3000,7 @@ No markdown, no other text."""
 
             # ---------- input (prompt_toolkit: / and @ dropdown when TTY) ----------
 
-            task = read_task_line()
+            task = await read_task_line()
 
             if not task:
                 console.print(
@@ -3015,7 +3011,8 @@ No markdown, no other text."""
                 )
                 continue
 
-            handled, should_exit = handle_pre_pipeline_command(
+            handled, should_exit = await asyncio.to_thread(
+                handle_pre_pipeline_command,
                 task,
                 {
                     "console": console,
@@ -3075,7 +3072,7 @@ No markdown, no other text."""
             if session_directive == "ask":
                 mem_ctx = mem_block.strip() if mem_block.strip() else "(none yet)"
                 ask_task_body = (attach_block or "") + (task_clean or "(no message)")
-                ask_raw, ask_err, ask_rc = run_codex(
+                ask_raw, ask_err, ask_rc = await run_codex(
                     ASK_MODE_PROMPT.replace("__MEMORY__", mem_ctx)
                     .replace(
                         "__CAPS__",
@@ -3126,7 +3123,7 @@ No markdown, no other text."""
                 continue
 
             router_hint = ROUTER_DIRECTIVE_HINTS.get(session_directive or "", "")
-            route = resolve_turn_mode(
+            route = await resolve_turn_mode(
                 session_directive=session_directive,
                 task_clean=task_clean,
                 mem_block=mem_block,
@@ -3193,7 +3190,7 @@ No markdown, no other text."""
                 path_allowed_for_mention=_path_allowed_for_mention,
             )
 
-            stitch_ctx = maybe_run_stitch_stage(
+            stitch_ctx = await maybe_run_stitch_stage(
                 task_clean=task_clean,
                 task_raw=task,
                 mode=mode,
@@ -3248,13 +3245,11 @@ No markdown, no other text."""
                         "Return markdown with sections: Layout, Components, Styling, Interactions, Responsiveness."
                     )
                     if use_async_vs:
-                        vr = asyncio.run(
-                            gemini_generate_with_image_async(
-                                prompt_vs,
-                                model_vs,
-                                img,
-                                timeout_sec=_subprocess_timeout_sec() or 60,
-                            )
+                        vr = await gemini_generate_with_image_async(
+                            prompt_vs,
+                            model_vs,
+                            img,
+                            timeout_sec=_subprocess_timeout_sec() or 60,
                         )
                     else:
                         vr = gemini_generate_with_image(
@@ -3291,7 +3286,7 @@ No markdown, no other text."""
                     "detected test command passes.\n"
                     "For existing files, prefer unified diff blocks; for new files, use FILE: blocks.\n"
                 )
-            raw, draft_err, draft_rc = run_codex(
+            raw, draft_err, draft_rc = await run_codex(
                 f"{visual_spec_block}{mem_block}{attach_block}{auto_context_block}{symbol_dep_context_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}{CODEX_PATCH_RULES}"
                 f"{tdd_extra_hint}\n\nTASK:\n{task_clean}\n",
                 "Codex: drafting initial implementation...",
@@ -3395,7 +3390,7 @@ Return project edits as:
 - unified diff blocks for existing files
 - FILE: blocks for new files
 """
-                        improved_raw, imp_err, imp_rc = run_codex(
+                        improved_raw, imp_err, imp_rc = await run_codex(
                             fix_prompt, "Codex: fixing via validation feedback..."
                         )
                         if imp_rc != 0:
@@ -3445,7 +3440,7 @@ Return project edits as:
                     trace_doing(
                         "Running visual UI validation (screenshot + Gemini vision review)."
                     )
-                    visual_review = run_visual_ui_review(task_clean)
+                    visual_review = await run_visual_ui_review(task_clean)
                     if visual_review:
                         section_rule("Visual Review (Gemini Vision)")
                         console.print()
@@ -3468,7 +3463,7 @@ Return project edits as:
 - unified diff blocks for existing files
 - FILE: blocks for new files
 """
-                        vraw, verr, vrc = run_codex(
+                        vraw, verr, vrc = await run_codex(
                             visual_fix_prompt, "Codex: applying visual review fixes..."
                         )
                         if vrc == 0:
@@ -3488,7 +3483,7 @@ Return project edits as:
                                 console.print(Text((verr or "").strip()[:800], style=LOG_WARN))
                             trace_done("Visual fix pass failed; keeping prior project state.")
 
-                auto_memory_after_project_session(
+                await auto_memory_after_project_session(
                     memory, task, ", ".join(sorted(files.keys()))
                 )
                 _token_turn_footer()
@@ -3550,7 +3545,7 @@ Return project edits as:
                 f"{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{GEMINI_RULES}"
                 f"{git_ctx_block}"
             )
-            review, gem_rev_err, gem_rev_rc = run_gemini(
+            review, gem_rev_err, gem_rev_rc = await run_gemini(
                 build_gemini_review_prompt(review_context, code),
                 "Gemini: writing structured review...",
             )
@@ -3693,12 +3688,12 @@ Return ONLY code.
                     _record_tokens("codex", combined)
                 except Exception:
                     # If streaming fails, fall back to the normal non-streaming path.
-                    improved_raw, imp_err, imp_rc = run_codex(
+                    improved_raw, imp_err, imp_rc = await run_codex(
                         codex_improve_prompt,
                         "Codex: applying Gemini feedback...",
                     )
             else:
-                improved_raw, imp_err, imp_rc = run_codex(
+                improved_raw, imp_err, imp_rc = await run_codex(
                     codex_improve_prompt,
                     "Codex: applying Gemini feedback...",
                 )
@@ -3746,7 +3741,7 @@ Return ONLY code.
             trace_doing(
                 "I'm sending both versions to Gemini and asking for a short recap of what got better—not another code edit."
             )
-            summary, gem_sum_err, gem_sum_rc = run_gemini(
+            summary, gem_sum_err, gem_sum_rc = await run_gemini(
                 f"""
 {mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{GEMINI_RULES}
 
@@ -3785,7 +3780,7 @@ NEW:
             console.print(summary)
             console.print()
 
-            auto_memory_after_code_session(memory, task, summary)
+            await auto_memory_after_code_session(memory, task, summary)
             _token_turn_footer()
             _say("[cogem] Turn finished. What would you like to do next?")
 
@@ -3807,4 +3802,6 @@ NEW:
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio as _asyncio
+
+    _asyncio.run(main())

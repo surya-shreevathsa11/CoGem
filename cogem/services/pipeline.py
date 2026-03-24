@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import inspect
 import sys
 from typing import Any, Dict, List, Set, Tuple
 
@@ -305,7 +306,7 @@ def build_context_blocks(
     return auto_context_block, symbol_dep_context_block
 
 
-def maybe_run_stitch_stage(
+async def maybe_run_stitch_stage(
     *,
     task_clean: str,
     task_raw: str,
@@ -409,9 +410,13 @@ def maybe_run_stitch_stage(
                     )
                     trace_done("Skipping Stitch paste; continuing without Stitch HTML.")
                 else:
-                    stitch_in = read_task_line(
+                    stitch_in_v = read_task_line(
                         "Stitch export — paste code or @path (Enter to skip): "
                     )
+                    if inspect.isawaitable(stitch_in_v):
+                        stitch_in = await stitch_in_v
+                    else:
+                        stitch_in = stitch_in_v
                     if stitch_in.strip():
                         if looks_like_ui_content(stitch_in):
                             stitch_block = format_stitch_context_for_codex(stitch_in)
