@@ -53,46 +53,48 @@ def _write_fake_clis(bin_dir: Path) -> None:
         encoding="utf-8",
     )
 
-    # Cross-platform launchers for `codex` and `gemini`.
-    codex_sh = bin_dir / "codex"
-    gemini_sh = bin_dir / "gemini"
-    codex_cmd = bin_dir / "codex.cmd"
-    gemini_cmd = bin_dir / "gemini.cmd"
-
-    codex_sh.write_text(
-        "#!/usr/bin/env sh\n\"{}\" \"{}\" \"$@\"\n".format(
-            sys.executable.replace("\\", "/"),
-            str(codex_py).replace("\\", "/"),
-        ),
-        encoding="utf-8",
-    )
-    gemini_sh.write_text(
-        "#!/usr/bin/env sh\n\"{}\" \"{}\" \"$@\"\n".format(
-            sys.executable.replace("\\", "/"),
-            str(gemini_py).replace("\\", "/"),
-        ),
-        encoding="utf-8",
-    )
-    codex_cmd.write_text(
-        "@echo off\r\n\"{}\" \"{}\" %*\r\n".format(sys.executable, str(codex_py)),
-        encoding="utf-8",
-    )
-    gemini_cmd.write_text(
-        "@echo off\r\n\"{}\" \"{}\" %*\r\n".format(sys.executable, str(gemini_py)),
-        encoding="utf-8",
-    )
-    try:
-        os.chmod(codex_sh, 0o755)
-        os.chmod(gemini_sh, 0o755)
-    except OSError:
-        pass
+    if os.name == "nt":
+        codex_cmd = bin_dir / "codex.cmd"
+        gemini_cmd = bin_dir / "gemini.cmd"
+        codex_cmd.write_text(
+            "@echo off\r\n\"{}\" \"{}\" %*\r\n".format(sys.executable, str(codex_py)),
+            encoding="utf-8",
+        )
+        gemini_cmd.write_text(
+            "@echo off\r\n\"{}\" \"{}\" %*\r\n".format(sys.executable, str(gemini_py)),
+            encoding="utf-8",
+        )
+    else:
+        codex_sh = bin_dir / "codex"
+        gemini_sh = bin_dir / "gemini"
+        codex_sh.write_text(
+            "#!/bin/bash\n\"{}\" \"{}\" \"$@\"\n".format(
+                sys.executable.replace("\\", "/"),
+                str(codex_py).replace("\\", "/"),
+            ),
+            encoding="utf-8",
+        )
+        gemini_sh.write_text(
+            "#!/bin/bash\n\"{}\" \"{}\" \"$@\"\n".format(
+                sys.executable.replace("\\", "/"),
+                str(gemini_py).replace("\\", "/"),
+            ),
+            encoding="utf-8",
+        )
+        try:
+            os.chmod(codex_sh, 0o755)
+            os.chmod(gemini_sh, 0o755)
+        except OSError:
+            pass
 
 
 def _run_cli(repo_root: Path, stdin_text: str, bin_dir: Path) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
-    env["COGEM_CODEX_CMD"] = str(bin_dir / "codex.cmd")
-    env["COGEM_GEMINI_CMD"] = str(bin_dir / "gemini.cmd")
+    codex_exec = "codex.cmd" if os.name == "nt" else "codex"
+    gemini_exec = "gemini.cmd" if os.name == "nt" else "gemini"
+    env["COGEM_CODEX_CMD"] = str(bin_dir / codex_exec)
+    env["COGEM_GEMINI_CMD"] = str(bin_dir / gemini_exec)
     env["COGEM_AUTO_PERMISSIONS"] = "yes"
     env["COGEM_ALLOW_LOCAL_COMMANDS"] = "yes"
     env["COGEM_STITCH"] = "0"
