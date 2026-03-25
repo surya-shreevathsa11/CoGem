@@ -651,7 +651,7 @@ pip install ".[vector]"
 | Variable                            | Purpose                                                                                                                                          |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `COGEM_AUTO_PERMISSIONS`            | `yes` / `no` — skip the interactive prompt for Codex `--full-auto` and Gemini `--yolo`                                                           |
-| `COGEM_ALLOW_LOCAL_COMMANDS`        | `yes` / `no` — allow local command execution for `/run`, `/test`, `/lint`, and `/github/clone`                                                   |
+| `COGEM_ALLOW_LOCAL_COMMANDS`        | `yes` / `no` — allow local command execution for `/run`, `/test`, `/lint`, `/github/clone`, and build-time artifact auto-run                     |
 | `COGEM_RUN_POLICY`                  | strict by default; set `relaxed` to allow legacy broad `/run` command behavior                                                                   |
 | `COGEM_CODEX_WORKDIR`               | Absolute path passed to Codex `-C` (workspace root)                                                                                              |
 | `COGEM_CODEX_MODEL`                 | Default Codex LLM ID when `--codex-model` is not passed                                                                                          |

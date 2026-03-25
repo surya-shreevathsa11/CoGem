@@ -1242,8 +1242,8 @@ async def async_main():
         console.print()
         console.print(
             Text(
-                "Local tools (/run, /test, /lint, /github/clone) may execute commands on your machine. "
-                "Allow that for this cogem session?",
+                "Local tools (/run, /test, /lint, /github/clone) and build-time artifact auto-run "
+                "may execute commands on your machine. Allow that for this cogem session?",
                 style=MUTED,
             )
         )
@@ -3016,6 +3016,17 @@ No markdown, no other text."""
         """Run by extension (internal only): .py, .js, then open .html — generic UI copy."""
         paths = [p.strip() for p in files if p.strip()]
         if not paths:
+            return
+
+        # Gate artifact execution behind the same permission as /run, /test, /lint.
+        ensure_run_permissions()
+        if not run_permissions.get("granted"):
+            console.print(
+                Text(
+                    "[cogem] Skipping auto-run of generated artifacts (local command execution denied).",
+                    style=LOG_WARN,
+                )
+            )
             return
 
         py_paths = [p for p in paths if p.lower().endswith(".py")]
