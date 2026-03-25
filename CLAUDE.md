@@ -18,7 +18,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Task Management
 - **System:** GitHub Issues on `surya-shreevathsa11/CoGem`
 - **All work is tracked via GitHub Issues.** Before starting work, confirm which issue(s) you are addressing.
+- **Assign the issue** to whoever is working on it (`gh issue edit N --add-assignee USERNAME`).
+- **Assign the PR** to the same person (`gh pr edit N --add-assignee USERNAME`).
+- **Link issue to PR** via `Closes #N` in the PR body/commit footer — this auto-closes the issue on merge.
 - **Never close an issue without tests.** If code was changed, tests must be added/updated and passing.
+- To find the current authenticated user: `gh api user --jq '.login'`
 
 ## Build & Test Commands
 
