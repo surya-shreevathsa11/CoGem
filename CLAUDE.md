@@ -139,11 +139,13 @@ After implementation, before pushing, Claude invokes Codex to review:
 codex exec "You are reviewing implementation for GitHub issue #N. Run 'gh issue view N --repo surya-shreevathsa11/CoGem --json body,title' to read the scope. Run 'git diff main...HEAD' to see changes. Review the FULL implementation — trace changes through the codebase, not just the diff. Check: missed requirements, bugs, missing tests, security issues, over-engineering. Verify tests were added/updated. Run 'python -m pytest -q' to check tests pass. Categorize: BLOCKING (must fix) vs NON-BLOCKING (follow-up issue). Be specific — file paths and line numbers." --full-auto
 ```
 
-#### Phase 4: Resolution (Claude <-> Codex iterate)
+#### Phase 4: Resolution (Claude <-> Codex iterate until APPROVED)
 
 - Claude addresses BLOCKING issues via Sonnet subagent
-- Claude re-invokes Codex review until no BLOCKING issues remain
-- Non-blocking issues become new GitHub Issues
+- **Claude MUST re-invoke Codex review after fixing BLOCKING issues** — do not assume the fix is correct
+- Loop continues until Codex explicitly says **APPROVED** with no BLOCKING issues
+- There is no limit on review rounds — keep iterating until clean
+- Non-blocking issues: fix in the same pass if quick, otherwise create a new GitHub Issue
 - **Always ask user for permission before pushing**
 
 ### Codex CLI Notes

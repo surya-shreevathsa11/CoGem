@@ -34,6 +34,8 @@ CoGem is a Python CLI tool that orchestrates OpenAI Codex and Google Gemini into
   - **NON-BLOCKING** — Follow-up issue (style nits, minor refactors)
 - Be specific — file paths and line numbers, no rubber-stamping
 - Run `python -m pytest -q` if possible to verify tests pass
+- **If no BLOCKING issues remain, give an explicit APPROVED verdict**
+- **If BLOCKING issues exist, Claude will fix and re-invoke you** — expect multiple review rounds until clean
 
 ## Standards
 

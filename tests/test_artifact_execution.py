@@ -1,7 +1,6 @@
 """Tests for artifact auto-execution permission gate (GitHub issue #1)."""
 from __future__ import annotations
 
-import inspect
 import re
 from pathlib import Path
 
