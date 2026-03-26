@@ -8,7 +8,7 @@ import subprocess
 import sys
 from typing import Any, Dict, List, Set, Tuple
 
-from cogem.graph import build_symbol_dependency_context_from_py_files
+from cogem.graph import build_symbol_dependency_context_from_source_files
 from cogem.repo_awareness import AutoRepoContextConfig, auto_repo_context_block_for_task
 from cogem.stitch import (
     build_stitch_prompt,
@@ -312,7 +312,7 @@ def build_context_blocks(
             if symbol_index_enabled:
                 from cogem.symbols import SymbolIndex
 
-                def _extract_mentioned_py_files(raw_task: str) -> List[str]:
+                def _extract_mentioned_source_files(raw_task: str) -> List[str]:
                     files: List[str] = []
                     for m in mention_pattern.finditer(raw_task or ""):
                         p = m.group(1) or m.group(2) or m.group(3)
@@ -324,7 +324,9 @@ def build_context_blocks(
                         roots = mention_roots_list()
                         if not path_allowed_for_mention(abs_p, roots):
                             continue
-                        if os.path.isfile(abs_p) and abs_p.lower().endswith(".py"):
+                        if os.path.isfile(abs_p) and abs_p.lower().endswith(
+                            (".py", ".js", ".ts", ".tsx", ".jsx")
+                        ):
                             files.append(os.path.realpath(abs_p))
                     out: List[str] = []
                     seen: Set[str] = set()
@@ -335,12 +337,12 @@ def build_context_blocks(
                         out.append(f)
                     return out
 
-                py_files = _extract_mentioned_py_files(task or "")
-                if py_files:
+                source_files = _extract_mentioned_source_files(task or "")
+                if source_files:
                     idx = SymbolIndex(repo_root)
-                    symbol_dep_context_block = build_symbol_dependency_context_from_py_files(
+                    symbol_dep_context_block = build_symbol_dependency_context_from_source_files(
                         repo_root=repo_root,
-                        py_files=py_files,
+                        source_files=source_files,
                         symbol_index=idx,
                         max_symbols=int(
                             os.environ.get("COGEM_SYMBOL_DEP_MAX_SYMBOLS", "20")

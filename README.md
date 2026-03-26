@@ -61,12 +61,12 @@ Cogem is optimized for engineering quality on larger tasks by adding routing, re
 
 
 | Dimension          | Standalone CLIs (`gemini`, `codex`) | Cogem                                         |
-| ------------------ | --------------------------------------------- | --------------------------------------------- |
-| Model usage        | Single-provider, direct                       | Multi-provider orchestration                  |
-| Review process     | Human-only review                             | Cross-model peer review (`Codex <-> Gemini`)  |
-| Context continuity | Mostly session-scoped                         | Persistent summarized project memory          |
-| Validation         | Manual test/lint loop                         | Auto-sandboxed validation + retry             |
-| Primary strength   | Speed, one-off tasks                          | Quality, correctness, multi-file project work |
+| ------------------ | ----------------------------------- | --------------------------------------------- |
+| Model usage        | Single-provider, direct             | Multi-provider orchestration                  |
+| Review process     | Human-only review                   | Cross-model peer review (`Codex <-> Gemini`)  |
+| Context continuity | Mostly session-scoped               | Persistent summarized project memory          |
+| Validation         | Manual test/lint loop               | Auto-sandboxed validation + retry             |
+| Primary strength   | Speed, one-off tasks                | Quality, correctness, multi-file project work |
 
 
 ### Practical Guidance
@@ -454,7 +454,7 @@ While Cogem is running, you can change models without restarting:
 
 ---
 
-## Automated Validation Loop (Execution)
+## Automated Validation Loop (Execution):
 
 When you use `/build`, cogem now attempts to "close the loop" by running the detected repo checks and feeding failures back into Codex for a second pass.
 
