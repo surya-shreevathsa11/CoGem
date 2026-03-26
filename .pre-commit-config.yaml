@@ -1,0 +1,23 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: pytest-collection
+        name: pytest collection check
+        entry: python -m pytest --collect-only -q
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: compileall
+        name: syntax check (compileall)
+        entry: python -c "import compileall, sys; ok = compileall.compile_dir('cogem', force=True, quiet=1) and compileall.compile_dir('tests', force=True, quiet=1); sys.exit(0 if ok else 1)"
+        language: system
+        pass_filenames: false
+        always_run: true
