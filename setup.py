@@ -1,18 +1,6 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
-setup(
-    name="cogem",
-    version="0.1",
-    packages=find_packages(),
-    install_requires=[
-        "rich>=10.0.0",
-        "prompt_toolkit>=3.0.0",
-        "pypdf>=5.0.0",
-        "reportlab>=4.0.0",
-    ],
-    entry_points={
-        "console_scripts": [
-            "cogem=cogem.cli:main",
-        ],
-    },
-)
+
+if __name__ == "__main__":
+    # Keep packaging metadata in pyproject.toml only.
+    setup()

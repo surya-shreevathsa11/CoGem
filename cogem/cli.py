@@ -81,7 +81,7 @@ def _boot_run_step(
     return ok
 
 
-def boot_sequence() -> bool:
+def boot_sequence(required_providers: set[str] | None = None) -> bool:
     """TTY-style boot, real codex/gemini checks. Returns False if deps missing."""
     import os
     import shutil
@@ -114,6 +114,15 @@ def boot_sequence() -> bool:
             or os.environ.get("GOOGLE_API_KEY", "").strip()
         ):
             return False
+
+    def _claude_sdk_ready() -> bool:
+        if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+            return False
+        try:
+            import anthropic  # noqa: F401
+            return True
+        except Exception:
+            return False
         try:
             from google import genai  # noqa: F401
             return True
@@ -141,41 +150,63 @@ def boot_sequence() -> bool:
 
     _boot_run_step("initializing engine", None, min_spin=0.45)
 
-    codex_ready = _boot_run_step(
-        "loading codex",
-        lambda: _cmd_exists(os.environ.get("COGEM_CODEX_CMD", ""), "codex")
-        or _openai_sdk_ready(),
-        min_spin=0.35,
-    )
-    if not codex_ready:
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-        sys.stdout.write(
-            f"{_BOOT_ERR}cogem cannot start: `codex` is not on PATH.{_BOOT_RESET}\n"
-        )
-        sys.stdout.write(
-            f"{_BOOT_MUTED}Install the Codex CLI and ensure it is initialized, then try again.{_BOOT_RESET}\n"
-        )
-        sys.stdout.flush()
-        return False
+    req = set(required_providers or {"codex", "gemini"})
 
-    gemini_ready = _boot_run_step(
-        "loading gemini",
-        lambda: _cmd_exists(os.environ.get("COGEM_GEMINI_CMD", ""), "gemini")
-        or _gemini_sdk_ready(),
-        min_spin=0.35,
-    )
-    if not gemini_ready:
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-        sys.stdout.write(
-            f"{_BOOT_ERR}cogem cannot start: `gemini` is not on PATH.{_BOOT_RESET}\n"
+    if "codex" in req:
+        codex_ready = _boot_run_step(
+            "loading codex",
+            lambda: _cmd_exists(os.environ.get("COGEM_CODEX_CMD", ""), "codex")
+            or _openai_sdk_ready(),
+            min_spin=0.35,
         )
-        sys.stdout.write(
-            f"{_BOOT_MUTED}Install the Gemini CLI and ensure it is on your PATH, then try again.{_BOOT_RESET}\n"
+        if not codex_ready:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            sys.stdout.write(
+                f"{_BOOT_ERR}cogem cannot start: codex provider unavailable.{_BOOT_RESET}\n"
+            )
+            sys.stdout.write(
+                f"{_BOOT_MUTED}Install Codex CLI or configure OPENAI_API_KEY + openai SDK.{_BOOT_RESET}\n"
+            )
+            sys.stdout.flush()
+            return False
+
+    if "gemini" in req:
+        gemini_ready = _boot_run_step(
+            "loading gemini",
+            lambda: _cmd_exists(os.environ.get("COGEM_GEMINI_CMD", ""), "gemini")
+            or _gemini_sdk_ready(),
+            min_spin=0.35,
         )
-        sys.stdout.flush()
-        return False
+        if not gemini_ready:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            sys.stdout.write(
+                f"{_BOOT_ERR}cogem cannot start: gemini provider unavailable.{_BOOT_RESET}\n"
+            )
+            sys.stdout.write(
+                f"{_BOOT_MUTED}Install Gemini CLI or configure GOOGLE_API_KEY/GEMINI_API_KEY + google-genai SDK.{_BOOT_RESET}\n"
+            )
+            sys.stdout.flush()
+            return False
+
+    if "claude" in req:
+        claude_ready = _boot_run_step(
+            "loading claude",
+            _claude_sdk_ready,
+            min_spin=0.35,
+        )
+        if not claude_ready:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            sys.stdout.write(
+                f"{_BOOT_ERR}cogem cannot start: claude provider unavailable.{_BOOT_RESET}\n"
+            )
+            sys.stdout.write(
+                f"{_BOOT_MUTED}Set ANTHROPIC_API_KEY and install anthropic SDK.{_BOOT_RESET}\n"
+            )
+            sys.stdout.flush()
+            return False
 
     _boot_type_line("system ready >", 0.01, _BOOT_ROSE)
     sys.stdout.write("\n")
@@ -232,6 +263,8 @@ async def async_main():
     from cogem.write_safety import apply_unified_diff_safely, plan_safe_writes
     from cogem.command_policy import ALLOWED_EXECUTABLES, validate_local_command_args
     from cogem.llm_clients import (
+        claude_generate,
+        claude_generate_async,
         gemini_generate,
         gemini_generate_async,
         gemini_generate_with_image,
@@ -239,6 +272,7 @@ async def async_main():
         openai_generate,
         openai_generate_async,
     )
+    from cogem.role_mapping import needed_providers, resolve_role_provider_map
     from cogem.services.commands import handle_pre_pipeline_command
     from cogem.services.pipeline import build_context_blocks, maybe_run_stitch_stage
     from cogem.services.routing import parse_session_directive, resolve_turn_mode
@@ -255,8 +289,9 @@ async def async_main():
             "Examples:\n"
             "  cogem\n"
             "  cogem --codex-model o3 --gemini-model gemini-2.5-pro\n"
+            "  cogem --role-provider coder=claude --claude-model claude-sonnet-4-6\n"
             "\n"
-            "Env (when flags omitted): COGEM_CODEX_MODEL, COGEM_GEMINI_MODEL\n"
+            "Env (when flags omitted): COGEM_CODEX_MODEL, COGEM_GEMINI_MODEL, COGEM_CLAUDE_MODEL\n"
             "Valid IDs depend on your codex/gemini CLI and account; see `codex exec --help` and `gemini --help`."
         ),
     )
@@ -279,6 +314,25 @@ async def async_main():
         ),
     )
     _ap.add_argument(
+        "--claude-model",
+        metavar="MODEL_ID",
+        default=None,
+        help=(
+            "LLM for Claude SDK calls. Omit to use COGEM_CLAUDE_MODEL/COGEM_CLAUDE_SDK_MODEL "
+            "or the built-in default."
+        ),
+    )
+    _ap.add_argument(
+        "--role-provider",
+        metavar="ROLE=PROVIDER",
+        action="append",
+        default=[],
+        help=(
+            "Map a role to a provider; repeatable. Roles: orchestrator, planner, coder, reviewer, summariser. "
+            "Providers: codex, gemini, claude."
+        ),
+    )
+    _ap.add_argument(
         "--no-stitch",
         action="store_true",
         help=(
@@ -296,6 +350,11 @@ async def async_main():
     _args = _ap.parse_args()
     _codex_model = (_args.codex_model or os.environ.get("COGEM_CODEX_MODEL") or "").strip() or None
     _gemini_model = (_args.gemini_model or os.environ.get("COGEM_GEMINI_MODEL") or "").strip() or None
+    _claude_model = (_args.claude_model or os.environ.get("COGEM_CLAUDE_MODEL") or "").strip() or None
+    role_provider_map = resolve_role_provider_map(
+        env_map_raw=os.environ.get("COGEM_ROLE_PROVIDER_MAP", ""),
+        cli_pairs=list(_args.role_provider or []),
+    )
     stitch_feature_on = (not _args.no_stitch) and (
         (os.environ.get("COGEM_STITCH") or "1").strip().lower()
         not in ("0", "false", "no", "off", "disabled")
@@ -310,7 +369,7 @@ async def async_main():
         in ("1", "true", "yes", "on")
     )
 
-    if not await asyncio.to_thread(boot_sequence):
+    if not await asyncio.to_thread(boot_sequence, needed_providers(role_provider_map)):
         raise SystemExit(1)
 
     # Accent (rose) + Claude-like neutrals (dim rules, soft reasoning frames)
@@ -329,13 +388,13 @@ async def async_main():
 
     console = Console()
     # Best-effort token totals per provider (parsed from CLI output when present).
-    session_tokens = {"codex": 0, "gemini": 0}
+    session_tokens = {"codex": 0, "gemini": 0, "claude": 0}
     # None = not asked yet; True/False = user chose whether to pass Codex --full-auto and Gemini --yolo.
     auto_permissions: dict = {"granted": None}
     # None = not asked yet; True/False = user chose whether cogem can execute local shell commands (/run, /test, /lint, /github/clone).
     run_permissions: dict = {"granted": None}
     # Effective LLM IDs for this process (separate per backend); from CLI/env, change with /codex/model and /gemini/model.
-    models: dict = {"codex": _codex_model, "gemini": _gemini_model}
+    models: dict = {"codex": _codex_model, "gemini": _gemini_model, "claude": _claude_model}
 
     def _llm_status_line(human: str, cli_hint: str, model_id: Optional[str]) -> str:
         """human = short label; cli_hint = codex|gemini for messages."""
@@ -1600,40 +1659,51 @@ async def async_main():
         Best-effort dependency install inside container so tests/lint can run.
         Returns a short feedback string (empty if nothing to do).
         """
+        from cogem.docker_validation import plan_docker_dependency_install
+
         py_image = os.environ.get("COGEM_DOCKER_PY_IMAGE", "python:3.12-slim").strip()
         node_image = (
             os.environ.get("COGEM_DOCKER_NODE_IMAGE", "node:20-slim").strip()
         )
 
-        if repo_kind == "node":
-            image = node_image
-            if os.path.isfile(os.path.join(sandbox_root, "package-lock.json")):
-                tokens = ["npm", "ci"]
-            elif os.path.isfile(os.path.join(sandbox_root, "package.json")):
-                tokens = ["npm", "install"]
-            else:
-                return ""
-        elif repo_kind == "python":
-            image = py_image
-            req = os.path.join(sandbox_root, "requirements.txt")
-            if os.path.isfile(req):
-                tokens = ["pip", "install", "-r", "requirements.txt"]
-            elif (
-                os.path.isfile(os.path.join(sandbox_root, "pyproject.toml"))
-                or os.path.isfile(os.path.join(sandbox_root, "setup.py"))
-            ):
-                # Generic fallback: install the repo itself.
-                tokens = ["pip", "install", "."]
-            else:
-                return ""
-        else:
+        signals = {
+            "package-lock.json": os.path.isfile(
+                os.path.join(sandbox_root, "package-lock.json")
+            ),
+            "package.json": os.path.isfile(os.path.join(sandbox_root, "package.json")),
+            "pnpm-lock.yaml": os.path.isfile(
+                os.path.join(sandbox_root, "pnpm-lock.yaml")
+            ),
+            "yarn.lock": os.path.isfile(os.path.join(sandbox_root, "yarn.lock")),
+            "requirements.txt": os.path.isfile(
+                os.path.join(sandbox_root, "requirements.txt")
+            ),
+            "pyproject.toml": os.path.isfile(
+                os.path.join(sandbox_root, "pyproject.toml")
+            ),
+            "setup.py": os.path.isfile(os.path.join(sandbox_root, "setup.py")),
+            "poetry.lock": os.path.isfile(os.path.join(sandbox_root, "poetry.lock")),
+            "pdm.lock": os.path.isfile(os.path.join(sandbox_root, "pdm.lock")),
+        }
+
+        plan = plan_docker_dependency_install(repo_kind, signals)
+        if not plan.commands:
             return ""
 
-        rc, out, err = _docker_run_tokens(
-            image, tokens, sandbox_root=sandbox_root
-        )
-        if rc != 0:
-            return f"Dependency install failed (rc={rc}):\n{(err or out).strip()[:4000]}"
+        if plan.image_family == "node":
+            image = node_image
+        else:
+            image = py_image
+
+        for tokens in plan.commands:
+            rc, out, err = _docker_run_tokens(
+                image, tokens, sandbox_root=sandbox_root
+            )
+            if rc != 0:
+                return (
+                    f"Dependency install failed (rc={rc}):\n"
+                    f"{(err or out).strip()[:4000]}"
+                )
         return ""
 
     def _run_validation_suite_docker() -> Tuple[bool, str]:
@@ -1651,7 +1721,10 @@ async def async_main():
             combined_parts: List[str] = []
             ok = True
 
-            if repo_kind == "node":
+            from cogem.docker_validation import normalize_repo_kind_for_docker
+
+            docker_family = normalize_repo_kind_for_docker(repo_kind)
+            if docker_family == "node":
                 image = (
                     os.environ.get("COGEM_DOCKER_NODE_IMAGE", "node:20-slim").strip()
                 )
@@ -1908,6 +1981,56 @@ async def async_main():
         combined = (stdout or "") + "\n" + (stderr or "")
         _record_tokens("gemini", combined)
         return (stdout or "").strip(), stderr or "", rc
+
+    async def run_claude(prompt: str, status_msg: str) -> Tuple[str, str, int]:
+        backend = (os.environ.get("COGEM_CLAUDE_BACKEND", "sdk").strip().lower() or "sdk")
+        sdk_model = (
+            models.get("claude")
+            or os.environ.get("COGEM_CLAUDE_SDK_MODEL", "").strip()
+            or "claude-sonnet-4-6"
+        )
+        timeout = _subprocess_timeout_sec() or 60
+        use_async = (
+            os.environ.get("COGEM_ASYNC_LLM", "1").strip().lower()
+            not in ("0", "false", "no", "off", "disabled")
+        )
+
+        async def _run_sdk_async():
+            return await claude_generate_async(prompt, sdk_model, timeout_sec=timeout)
+
+        def _run_sdk_sync():
+            return claude_generate(prompt, sdk_model, timeout_sec=timeout)
+
+        if backend != "sdk":
+            return "", "Claude backend supports SDK only.", 1
+        try:
+            if use_async:
+                if status_msg:
+                    r = await _run_with_ascii_progress_async(status_msg, _run_sdk_async)
+                else:
+                    r = await _run_sdk_async()
+            else:
+                r = (
+                    _run_with_ascii_progress(status_msg, _run_sdk_sync)
+                    if status_msg
+                    else _run_sdk_sync()
+                )
+            if r.returncode == 0:
+                _record_tokens("claude", r.text or "")
+                return (r.text or "").strip(), "", 0
+            return "", r.error or "Claude SDK call failed.", 1
+        except Exception as e:
+            return "", str(e), 1
+
+    async def run_role(role: str, prompt: str, status_msg: str) -> Tuple[str, str, int]:
+        provider = role_provider_map.get(role, "codex")
+        if provider == "codex":
+            return await run_codex(prompt, status_msg)
+        if provider == "gemini":
+            return await run_gemini(prompt, status_msg)
+        if provider == "claude":
+            return await run_claude(prompt, status_msg)
+        return "", f"Unsupported provider for role {role}: {provider}", 1
 
     def extract_code(text):
         match = re.search(r"```(?:\w+)?\n([\s\S]*?)```", text)
@@ -2211,8 +2334,8 @@ __OUTPUTS__
                 f"{context['stitch_block']}{context['stitch_rules_extra']}{context['mode_hint']}{CODEX_RULES}{CODEX_PATCH_RULES}\n\n"
                 f"TASK:\n{sub_task.description}\n"
             )
-            raw, derr, drc = await run_codex(
-                draft_prompt, f"Team {sub_task.id}: Codex draft..."
+            raw, derr, drc = await run_role(
+                "coder", draft_prompt, f"Team {sub_task.id}: Coder draft..."
             )
             if drc != 0:
                 sub_task.status = "failed"
@@ -2222,8 +2345,8 @@ __OUTPUTS__
                 f"{context['mem_block']}{target_attach}{context['mode_hint']}{GEMINI_RULES}",
                 raw,
             )
-            rev, rerr, rrc = await run_gemini(
-                review_prompt, f"Team {sub_task.id}: Gemini review..."
+            rev, rerr, rrc = await run_role(
+                "reviewer", review_prompt, f"Team {sub_task.id}: Reviewer feedback..."
             )
             if rrc != 0:
                 rev = f"(review unavailable: {(rerr or '')[:300]})"
@@ -2243,8 +2366,8 @@ Return project edits as:
 - unified diff blocks for existing files
 - FILE: blocks for new files
 """
-            improved, ierr, irc = await run_codex(
-                improve_prompt, f"Team {sub_task.id}: Codex improve..."
+            improved, ierr, irc = await run_role(
+                "coder", improve_prompt, f"Team {sub_task.id}: Coder improve..."
             )
             if irc != 0:
                 sub_task.status = "failed"
@@ -2384,6 +2507,8 @@ Return project edits as:
         ("/pdf", "Generate a PDF from provided text (plain text layout)"),
         ("/codex/model", "Show or set Codex LLM (draft + improve)"),
         ("/gemini/model", "Show or set Gemini LLM (review + summary)"),
+        ("/claude/model", "Show or set Claude LLM (SDK only)"),
+        ("/roles", "Show active role->provider mapping"),
         ("/repo/info", "Show repo info (git status, branch, last commit)"),
         ("/test", "Run project tests (best-effort; Python or Node)"),
         ("/lint", "Run project lint (best-effort; Python or Node)"),
@@ -3161,6 +3286,8 @@ No markdown, no other text."""
                         "Session: /build /plan /debug /agent /ask   "
                         "/codex/model <MODEL_ID|reset>   "
                         "/gemini/model <MODEL_ID|reset>   "
+                        "/claude/model <MODEL_ID|reset>   "
+                        "/roles   "
                         "/repo/info /test /lint   "
                         "/run <cmd>   "
                         "/github/info <url|owner/repo>   "
@@ -3208,6 +3335,8 @@ No markdown, no other text."""
                     "models": models,
                     "_codex_model": _codex_model,
                     "_gemini_model": _gemini_model,
+                    "_claude_model": _claude_model,
+                    "role_provider_map": role_provider_map,
                     "_repo_root": _repo_root,
                     "_select_test_cmd": _select_test_cmd,
                     "_select_lint_cmd": _select_lint_cmd,
@@ -3310,7 +3439,7 @@ No markdown, no other text."""
                 task_clean=task_clean,
                 mem_block=mem_block,
                 build_router_prompt=build_router_prompt,
-                run_codex=run_codex,
+                run_codex=lambda prompt, status: run_role("orchestrator", prompt, status),
                 runtime_stitch_capabilities_block=runtime_stitch_capabilities_block,
                 runtime_cogem_commands_capabilities_block=runtime_cogem_commands_capabilities_block,
                 router_hint=router_hint,
@@ -3527,10 +3656,30 @@ No markdown, no other text."""
                 draft_err = ""
                 draft_rc = 0
             else:
-                raw, draft_err, draft_rc = await run_codex(
-                    f"{visual_spec_block}{mem_block}{attach_block}{auto_context_block}{symbol_dep_context_block}{stitch_block}{stitch_rules_extra}{mode_hint}{CODEX_RULES}{CODEX_PATCH_RULES}"
+                planner_block = ""
+                plan_prompt = (
+                    f"{mem_block}{attach_block}{auto_context_block}{symbol_dep_context_block}"
+                    f"{stitch_block}{stitch_rules_extra}{mode_hint}\n\n"
+                    "Create a concise implementation plan for this task. "
+                    "Focus on major files to edit, tests to add/update, and likely edge cases.\n\n"
+                    f"TASK:\n{task_clean}\n"
+                )
+                plan_raw, _plan_err, plan_rc = await run_role(
+                    "planner",
+                    plan_prompt,
+                    "Planner: preparing implementation plan...",
+                )
+                if plan_rc == 0 and (plan_raw or "").strip():
+                    planner_block = (
+                        "\n\n## Planner guidance\n"
+                        + (plan_raw or "").strip()[:4000]
+                        + "\n"
+                    )
+                raw, draft_err, draft_rc = await run_role(
+                    "coder",
+                    f"{visual_spec_block}{mem_block}{attach_block}{auto_context_block}{symbol_dep_context_block}{stitch_block}{stitch_rules_extra}{mode_hint}{planner_block}{CODEX_RULES}{CODEX_PATCH_RULES}"
                     f"{tdd_extra_hint}\n\nTASK:\n{task_clean}\n",
-                    "Codex: drafting initial implementation...",
+                    "Coder: drafting initial implementation...",
                 )
                 if draft_rc != 0:
                     trace_done(
@@ -3631,8 +3780,8 @@ Return project edits as:
 - unified diff blocks for existing files
 - FILE: blocks for new files
 """
-                        improved_raw, imp_err, imp_rc = await run_codex(
-                            fix_prompt, "Codex: fixing via validation feedback..."
+                        improved_raw, imp_err, imp_rc = await run_role(
+                            "coder", fix_prompt, "Coder: fixing via validation feedback..."
                         )
                         if imp_rc != 0:
                             console.print(
@@ -3704,8 +3853,8 @@ Return project edits as:
 - unified diff blocks for existing files
 - FILE: blocks for new files
 """
-                        vraw, verr, vrc = await run_codex(
-                            visual_fix_prompt, "Codex: applying visual review fixes..."
+                        vraw, verr, vrc = await run_role(
+                            "coder", visual_fix_prompt, "Coder: applying visual review fixes..."
                         )
                         if vrc == 0:
                             vfiles = extract_files(vraw)
@@ -3786,9 +3935,10 @@ Return project edits as:
                 f"{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{GEMINI_RULES}"
                 f"{git_ctx_block}"
             )
-            review, gem_rev_err, gem_rev_rc = await run_gemini(
+            review, gem_rev_err, gem_rev_rc = await run_role(
+                "reviewer",
                 build_gemini_review_prompt(review_context, code),
-                "Gemini: writing structured review...",
+                "Reviewer: writing structured review...",
             )
             if gem_rev_rc != 0:
                 trace_done("Gemini review failed; stopping this build turn.")
@@ -3842,7 +3992,8 @@ Return ONLY code.
             imp_err = ""
             imp_rc = 1
             stream_diffs = (
-                os.environ.get("COGEM_STREAM_DIFFS", "0").strip().lower()
+                role_provider_map.get("coder", "codex") == "codex"
+                and os.environ.get("COGEM_STREAM_DIFFS", "0").strip().lower()
                 not in ("0", "false", "no", "off", "disabled")
                 and sys.stdout.isatty()
             )
@@ -3929,14 +4080,16 @@ Return ONLY code.
                     _record_tokens("codex", combined)
                 except Exception:
                     # If streaming fails, fall back to the normal non-streaming path.
-                    improved_raw, imp_err, imp_rc = await run_codex(
+                    improved_raw, imp_err, imp_rc = await run_role(
+                        "coder",
                         codex_improve_prompt,
-                        "Codex: applying Gemini feedback...",
+                        "Coder: applying reviewer feedback...",
                     )
             else:
-                improved_raw, imp_err, imp_rc = await run_codex(
+                improved_raw, imp_err, imp_rc = await run_role(
+                    "coder",
                     codex_improve_prompt,
-                    "Codex: applying Gemini feedback...",
+                    "Coder: applying reviewer feedback...",
                 )
             if imp_rc != 0:
                 console.print(
@@ -3982,7 +4135,8 @@ Return ONLY code.
             trace_doing(
                 "I'm sending both versions to Gemini and asking for a short recap of what got better—not another code edit."
             )
-            summary, gem_sum_err, gem_sum_rc = await run_gemini(
+            summary, gem_sum_err, gem_sum_rc = await run_role(
+                "summariser",
                 f"""
 {mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{GEMINI_RULES}
 
@@ -3994,7 +4148,7 @@ OLD:
 NEW:
 {improved}
 """,
-                "Gemini: summarizing improvements...",
+                "Summariser: summarizing improvements...",
             )
             if gem_sum_rc != 0:
                 summary = (

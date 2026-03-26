@@ -71,6 +71,44 @@ async def gemini_generate_async(
     return await asyncio.to_thread(gemini_generate, prompt, model, timeout_sec)
 
 
+def claude_generate(prompt: str, model: str, timeout_sec: Optional[int] = None) -> LLMResult:
+    try:
+        from anthropic import Anthropic
+    except Exception as e:
+        return LLMResult("", f"Anthropic SDK import failed: {e}", 1)
+    try:
+        client = Anthropic()
+        rsp = client.messages.create(
+            model=model,
+            max_tokens=4096,
+            system="You are a precise coding assistant.",
+            messages=[{"role": "user", "content": prompt}],
+            timeout=timeout_sec or 60,
+        )
+        text = ""
+        try:
+            parts = getattr(rsp, "content", None) or []
+            text_parts = []
+            for p in parts:
+                t = getattr(p, "text", None)
+                if t:
+                    text_parts.append(str(t))
+            text = "\n".join(text_parts).strip()
+        except Exception:
+            text = ""
+        if not text:
+            text = str(rsp)
+        return LLMResult(text, "", 0)
+    except Exception as e:
+        return LLMResult("", str(e), 1)
+
+
+async def claude_generate_async(
+    prompt: str, model: str, timeout_sec: Optional[int] = None
+) -> LLMResult:
+    return await asyncio.to_thread(claude_generate, prompt, model, timeout_sec)
+
+
 def gemini_generate_with_image(
     prompt: str,
     model: str,

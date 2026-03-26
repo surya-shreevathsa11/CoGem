@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import re
 import inspect
+import shutil
+import subprocess
 import sys
 from typing import Any, Dict, List, Set, Tuple
 
@@ -22,6 +24,20 @@ from cogem.task_intent import detect_prerequisite_first_task
 def _copy_to_clipboard(text: str) -> bool:
     if not (text or "").strip():
         return False
+
+    def _run_clip_cmd(cmd: List[str]) -> bool:
+        try:
+            subprocess.run(
+                cmd,
+                input=text,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            return True
+        except Exception:
+            return False
+
     try:
         import pyperclip  # type: ignore
 
@@ -29,6 +45,39 @@ def _copy_to_clipboard(text: str) -> bool:
         return True
     except Exception:
         pass
+
+    # Native platform tools are often more reliable than GUI toolkits in
+    # headless shells and remote sessions.
+    if sys.platform == "darwin" and shutil.which("pbcopy"):
+        if _run_clip_cmd(["pbcopy"]):
+            return True
+
+    if sys.platform.startswith("win"):
+        if shutil.which("clip"):
+            if _run_clip_cmd(["clip"]):
+                return True
+        if shutil.which("powershell"):
+            if _run_clip_cmd(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "Set-Clipboard -Value ([Console]::In.ReadToEnd())",
+                ]
+            ):
+                return True
+
+    # Linux / Wayland / X11 variants.
+    if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
+        if _run_clip_cmd(["wl-copy"]):
+            return True
+    if os.environ.get("DISPLAY") and shutil.which("xclip"):
+        if _run_clip_cmd(["xclip", "-selection", "clipboard"]):
+            return True
+    if os.environ.get("DISPLAY") and shutil.which("xsel"):
+        if _run_clip_cmd(["xsel", "--clipboard", "--input"]):
+            return True
+
     try:
         import tkinter as tk
 

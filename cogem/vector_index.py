@@ -3,12 +3,15 @@ from __future__ import annotations
 import os
 import json
 import hashlib
+import time
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 
 _DEFAULT_INDEX_DIRNAME = ".cogem/vector_db"
 _DEFAULT_INCLUDE_EXTS = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".css", ".html", ".json"}
+_DEFAULT_STALE_CHECK_SECS = 5.0
+_EMBEDDER_CACHE: Dict[str, object] = {}
 
 
 def _chunk_text(text: str, *, max_chars: int = 2500) -> List[str]:
@@ -109,6 +112,9 @@ class VectorIndex:
         self.index_dir = config.index_dir or os.path.join(
             self.repo_root, _DEFAULT_INDEX_DIRNAME
         )
+        self._embedder: Optional[object] = None
+        self._cached_table: Optional[object] = None
+        self._last_refresh_check_at = 0.0
 
     def is_available(self) -> bool:
         try:
@@ -176,6 +182,8 @@ class VectorIndex:
             with open(p, "w", encoding="utf-8") as f:
                 json.dump(manifest, f, indent=2, ensure_ascii=False)
                 f.write("\n")
+            # Force next build/load call to re-check freshness.
+            self._last_refresh_check_at = 0.0
         except OSError:
             return
 
@@ -189,9 +197,20 @@ class VectorIndex:
         return old != cur
 
     def _load_embedder(self):
+        if self._embedder is not None:
+            return self._embedder
+
+        cached = _EMBEDDER_CACHE.get(self.config.model_name)
+        if cached is not None:
+            self._embedder = cached
+            return cached
+
         from sentence_transformers import SentenceTransformer
 
-        return SentenceTransformer(self.config.model_name)
+        model = SentenceTransformer(self.config.model_name)
+        _EMBEDDER_CACHE[self.config.model_name] = model
+        self._embedder = model
+        return model
 
     def _build_chunks(self) -> List[dict]:
         """
@@ -241,6 +260,11 @@ class VectorIndex:
             return None
         import lancedb
 
+        if self._cached_table is not None and not self.config.rebuild:
+            now = time.monotonic()
+            if (now - self._last_refresh_check_at) < _DEFAULT_STALE_CHECK_SECS:
+                return self._cached_table
+
         conn = self._connect()
         table_name = "code_chunks"
 
@@ -252,7 +276,9 @@ class VectorIndex:
 
         if not self._index_is_stale():
             try:
-                return conn.open_table(table_name)
+                self._cached_table = conn.open_table(table_name)
+                self._last_refresh_check_at = time.monotonic()
+                return self._cached_table
             except Exception:
                 pass
         else:
@@ -273,6 +299,8 @@ class VectorIndex:
         arr = pa.Table.from_pylist(rows)
         table = conn.create_table(table_name, arr)
         self._save_manifest(self._current_manifest())
+        self._cached_table = table
+        self._last_refresh_check_at = time.monotonic()
         return table
 
     def query(self, task: str) -> List[dict]:

@@ -45,6 +45,41 @@ def _default_cache_path(repo_root: str) -> str:
     return os.path.join(base, "ctags_index.json")
 
 
+def _kind_points(kind: str) -> int:
+    kl = (kind or "").lower()
+    if "class" in kl:
+        return 100
+    if "interface" in kl:
+        return 95
+    if "struct" in kl or "enum" in kl:
+        return 100
+    if "function" in kl:
+        return 90
+    if "method" in kl:
+        return 85
+    if "variable" in kl or "var" in kl or "member" in kl:
+        return 10
+    return 10
+
+
+def _ext_points(path: str) -> int:
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".py", ".ts", ".tsx", ".js", ".jsx"):
+        return 30
+    if ext in (".c", ".cc", ".cpp", ".cxx"):
+        return 25
+    if ext in (".h", ".hh", ".hpp", ".hxx"):
+        return 5
+    return 10
+
+
+def _size_points(path: str) -> int:
+    try:
+        return min(25, os.path.getsize(path) // 20000)
+    except OSError:
+        return 0
+
+
 class SymbolIndex:
     """
     Minimal symbol index backed by universal-ctags/ctags JSON output.
@@ -234,32 +269,6 @@ class SymbolIndex:
             uniq[(t.path, t.line)] = t
         candidates = list(uniq.values())
 
-        def _kind_points(k: str) -> int:
-            kl = (k or "").lower()
-            if "class" in kl:
-                return 100
-            if "interface" in kl:
-                return 95
-            if "struct" in kl or "enum" in kl:
-                return 100
-            if "function" in kl:
-                return 90
-            if "method" in kl:
-                return 85
-            if "variable" in kl or "var" in kl or "member" in kl:
-                return 10
-            return 10
-
-        def _ext_points(path: str) -> int:
-            ext = os.path.splitext(path)[1].lower()
-            if ext in (".py", ".ts", ".tsx", ".js", ".jsx"):
-                return 30
-            if ext in (".c", ".cc", ".cpp", ".cxx"):
-                return 25
-            if ext in (".h", ".hh", ".hpp", ".hxx"):
-                return 5
-            return 10
-
         best_tag: Optional[TagMatch] = None
         best_score = -1
         best_snippet = ""
@@ -356,32 +365,6 @@ class SymbolIndex:
             uniq[(t.path, t.line)] = t
         candidates = list(uniq.values())
 
-        def _kind_points(k: str) -> int:
-            kl = (k or "").lower()
-            if "class" in kl:
-                return 100
-            if "interface" in kl:
-                return 95
-            if "struct" in kl or "enum" in kl:
-                return 100
-            if "function" in kl:
-                return 90
-            if "method" in kl:
-                return 85
-            if "variable" in kl or "var" in kl or "member" in kl:
-                return 10
-            return 10
-
-        def _ext_points(path: str) -> int:
-            ext = os.path.splitext(path)[1].lower()
-            if ext in (".py", ".ts", ".tsx", ".js", ".jsx"):
-                return 30
-            if ext in (".c", ".cc", ".cpp", ".cxx"):
-                return 25
-            if ext in (".h", ".hh", ".hpp", ".hxx"):
-                return 5
-            return 10
-
         preferred_candidates = [c for c in candidates if c.path in pref] if pref else []
         use = preferred_candidates if preferred_candidates else candidates
 
@@ -456,39 +439,6 @@ class SymbolIndex:
         if not matches:
             return None
 
-        def _kind_points(k: str) -> int:
-            kl = (k or "").lower()
-            if "class" in kl:
-                return 100
-            if "interface" in kl:
-                return 95
-            if "struct" in kl or "enum" in kl:
-                return 100
-            if "function" in kl:
-                return 90
-            if "method" in kl:
-                return 85
-            if "variable" in kl or "var" in kl or "member" in kl:
-                return 10
-            return 10
-
-        def _ext_points(path: str) -> int:
-            ext = os.path.splitext(path)[1].lower()
-            if ext in (".py", ".ts", ".tsx", ".js", ".jsx"):
-                return 30
-            if ext in (".c", ".cc", ".cpp", ".cxx"):
-                return 25
-            if ext in (".h", ".hh", ".hpp", ".hxx"):
-                return 5
-            return 10
-
-        def _size_points(path: str) -> int:
-            try:
-                sz = os.path.getsize(path)
-                return min(25, sz // 20000)
-            except OSError:
-                return 0
-
         best: Optional[TagMatch] = None
         best_score = -1
         for t in matches:
@@ -511,38 +461,6 @@ class SymbolIndex:
         tags = self.ensure_built()
         if not tags:
             return []
-
-        def _kind_points(k: str) -> int:
-            kl = (k or "").lower()
-            if "class" in kl:
-                return 100
-            if "interface" in kl:
-                return 95
-            if "struct" in kl or "enum" in kl:
-                return 100
-            if "function" in kl:
-                return 90
-            if "method" in kl:
-                return 85
-            if "variable" in kl or "var" in kl or "member" in kl:
-                return 10
-            return 10
-
-        def _ext_points(path: str) -> int:
-            ext = os.path.splitext(path)[1].lower()
-            if ext in (".py", ".ts", ".tsx", ".js", ".jsx"):
-                return 30
-            if ext in (".c", ".cc", ".cpp", ".cxx"):
-                return 25
-            if ext in (".h", ".hh", ".hpp", ".hxx"):
-                return 5
-            return 10
-
-        def _size_points(path: str) -> int:
-            try:
-                return min(25, os.path.getsize(path) // 20000)
-            except OSError:
-                return 0
 
         def _score(t: TagMatch) -> int:
             return _kind_points(t.kind) + _ext_points(t.path) + _size_points(t.path)
@@ -593,30 +511,6 @@ class SymbolIndex:
                 else:
                     streak = 0
             return score if i == len(n) else 0
-
-        def _kind_points(k: str) -> int:
-            kl = (k or "").lower()
-            if "class" in kl or "struct" in kl or "enum" in kl:
-                return 100
-            if "interface" in kl:
-                return 95
-            if "function" in kl:
-                return 90
-            if "method" in kl:
-                return 85
-            if "variable" in kl or "var" in kl or "member" in kl:
-                return 10
-            return 10
-
-        def _ext_points(path: str) -> int:
-            ext = os.path.splitext(path)[1].lower()
-            if ext in (".py", ".ts", ".tsx", ".js", ".jsx"):
-                return 30
-            if ext in (".c", ".cc", ".cpp", ".cxx"):
-                return 25
-            if ext in (".h", ".hh", ".hpp", ".hxx"):
-                return 5
-            return 10
 
         best_by_name: Dict[str, Tuple[TagMatch, int]] = {}
         for t in tags:
