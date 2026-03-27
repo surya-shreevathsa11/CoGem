@@ -118,6 +118,60 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         console.print(Text(f"Gemini LLM set to: {rest}", style=TITLE))
         return True, False
 
+    if task.startswith("/claude/model"):
+        rest = task[len("/claude/model") :].strip()
+        models = ctx["models"]
+        _claude_model = ctx["_claude_model"]
+        if not rest:
+            console.print(
+                Text(
+                    "Claude LLM — SDK-only provider (no CLI fallback).",
+                    style=MUTED,
+                )
+            )
+            console.print(
+                Text(
+                    f"  This session: {models.get('claude') or 'default (SDK default)'}",
+                    style=MUTED,
+                )
+            )
+            console.print(
+                Text(
+                    f"  From startup (--claude-model / COGEM_CLAUDE_MODEL): {_claude_model or '(none)'}",
+                    style=MUTED,
+                )
+            )
+            console.print(
+                Text(
+                    "  Usage: /claude/model <MODEL_ID>   or   /claude/model reset",
+                    style=MUTED,
+                )
+            )
+            return True, False
+        if rest.lower() == "reset":
+            models["claude"] = _claude_model
+            console.print(
+                Text(
+                    f"Claude LLM reset to: {models.get('claude') or 'default (SDK default)'}",
+                    style=TITLE,
+                )
+            )
+            return True, False
+        models["claude"] = rest
+        console.print(Text(f"Claude LLM set to: {rest}", style=TITLE))
+        return True, False
+
+    if task.strip().lower() == "/roles":
+        role_provider_map = ctx.get("role_provider_map", {})
+        console.print()
+        section_rule("Role provider mapping")
+        console.print()
+        for role in ("orchestrator", "planner", "coder", "reviewer", "summariser"):
+            provider = role_provider_map.get(role, "codex")
+            console.print(Text(f"{role}: {provider}", style=MUTED))
+        console.print()
+        return True, False
+
     if task.startswith("/repo/info"):
         _repo_root = ctx["_repo_root"]
         root = _repo_root()
