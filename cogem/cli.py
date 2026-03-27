@@ -2982,9 +2982,10 @@ No markdown, no other text."""
             "[cogem] Saving session memory (extra Codex call) — "
             "you will see START/DONE lines below; this is not stuck."
         )
-        out, _err, rc = await run_codex(
+        out, _err, rc = await run_role(
+            "orchestrator",
             prompt,
-            "Codex: updating persistent context...",
+            "Orchestrator: updating persistent context...",
         )
         if rc != 0:
             console.print(
@@ -3005,9 +3006,10 @@ No markdown, no other text."""
             "[cogem] Saving session memory (extra Codex call) — "
             "wait for DONE before the next prompt."
         )
-        out, _err, rc = await run_codex(
+        out, _err, rc = await run_role(
+            "orchestrator",
             prompt,
-            "Codex: updating persistent context...",
+            "Orchestrator: updating persistent context...",
         )
         if rc != 0:
             console.print(
@@ -3374,6 +3376,7 @@ No markdown, no other text."""
 
             session_tokens["codex"] = 0
             session_tokens["gemini"] = 0
+            session_tokens["claude"] = 0
 
             ensure_auto_permissions()
 
@@ -3383,7 +3386,8 @@ No markdown, no other text."""
             if session_directive == "ask":
                 mem_ctx = mem_block.strip() if mem_block.strip() else "(none yet)"
                 ask_task_body = (attach_block or "") + (task_clean or "(no message)")
-                ask_raw, ask_err, ask_rc = await run_codex(
+                ask_raw, ask_err, ask_rc = await run_role(
+                    "orchestrator",
                     ASK_MODE_PROMPT.replace("__MEMORY__", mem_ctx)
                     .replace(
                         "__CAPS__",
@@ -3391,7 +3395,7 @@ No markdown, no other text."""
                         + runtime_cogem_commands_capabilities_block(),
                     )
                     .replace("__TASK__", ask_task_body),
-                    "Codex: /ask reply...",
+                    "Orchestrator: /ask reply...",
                 )
                 if ask_rc != 0:
                     console.print()

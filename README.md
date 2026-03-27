@@ -373,15 +373,32 @@ pipx install -e . --force
 
 ## CLI options (optional)
 
-### LLM models (Codex vs Gemini)
+### LLM models and role/provider mapping
 
-**Yes - you choose LLMs separately.** Cogem wires two different CLIs, each with its own `-m` model flag:
+Cogem supports three providers (`codex`, `gemini`, `claude`) and five roles:
+`orchestrator`, `planner`, `coder`, `reviewer`, `summariser`.
+
+Default role map:
+
+- `orchestrator=codex`
+- `planner=codex`
+- `coder=codex`
+- `reviewer=gemini`
+- `summariser=gemini`
+
+You can override role mapping with:
+
+- `--role-provider ROLE=PROVIDER` (repeatable)
+- `COGEM_ROLE_PROVIDER_MAP` (comma-separated `role=provider` pairs)
+
+Model overrides:
 
 
-| Role in Cogem  | CLI flag                 | Used for                            |
-| -------------- | ------------------------ | ----------------------------------- |
-| **Codex LLM**  | `codex exec -m MODEL_ID` | Drafting code, Codex “improve” pass |
-| **Gemini LLM** | `gemini -m MODEL_ID`     | Review step, final summary          |
+| Provider         | Model source                               | Used for                                           |
+| ---------------- | ------------------------------------------ | -------------------------------------------------- |
+| **Codex**        | `--codex-model` / `COGEM_CODEX_MODEL`      | Any role mapped to `codex`                         |
+| **Gemini**       | `--gemini-model` / `COGEM_GEMINI_MODEL`    | Any role mapped to `gemini`                        |
+| **Claude (SDK)** | `--claude-model` / `COGEM_CLAUDE_MODEL`    | Any role mapped to `claude` (SDK-only, no CLI fallback) |
 
 
 - **If you do not set a model** for a backend, cogem **does not pass `-m`** for that CLI, so **that tool’s default model** is used (same as running `codex` / `gemini` without `-m`).
@@ -389,6 +406,7 @@ pipx install -e . --force
 
 ```bash
 cogem --codex-model o3 --gemini-model gemini-2.5-pro
+cogem --role-provider coder=claude --role-provider reviewer=gemini --claude-model claude-sonnet-4-6
 ```
 
 Only one backend:
@@ -402,18 +420,21 @@ If a flag is omitted, you can still set defaults with the environment variables 
 
 ### SDK-backed model calls (OpenAI + Google GenAI)
 
-Cogem now supports official Python SDK backends for both model paths, with CLI fallback for compatibility.
+Cogem supports SDK backends for OpenAI, Google GenAI, and Anthropic.
 
 - `COGEM_CODEX_BACKEND=auto|sdk|cli` (default `auto`)
 - `COGEM_GEMINI_BACKEND=auto|sdk|cli` (default `auto`)
+- `COGEM_CLAUDE_BACKEND=sdk` (Claude is SDK-only)
 - `COGEM_CODEX_SDK_MODEL` (default `gpt-4.1-mini`)
 - `COGEM_GEMINI_SDK_MODEL` (default `gemini-2.5-flash`)
+- `COGEM_CLAUDE_SDK_MODEL` (default `claude-sonnet-4-6`)
 
 In `auto` mode, Cogem tries SDK first and falls back to CLI if unavailable.
 For SDK mode you need:
 
 - OpenAI: `OPENAI_API_KEY`
 - Google GenAI: `GEMINI_API_KEY` or `GOOGLE_API_KEY`
+- Anthropic: `ANTHROPIC_API_KEY`
 
 Router secondary intent classifier:
 
@@ -439,6 +460,10 @@ While Cogem is running, you can change models without restarting:
 | `/gemini/model`                            | Show Gemini LLM (`gemini -m`), this session, and startup default              |
 | `/gemini/model <MODEL_ID>`                 | Use that ID for **all Gemini** calls this session                             |
 | `/gemini/model reset`                      | Restore Gemini model from `--gemini-model` / `COGEM_GEMINI_MODEL`             |
+| `/claude/model`                            | Show Claude LLM (SDK), this session, and startup default                      |
+| `/claude/model <MODEL_ID>`                 | Use that ID for **all Claude SDK** calls this session                         |
+| `/claude/model reset`                      | Restore Claude model from `--claude-model` / `COGEM_CLAUDE_MODEL`             |
+| `/roles`                                   | Show active role-to-provider mapping                                           |
 | `/repo/info`                               | Show repo info (git root, branch, last commit, status)                        |
 | `/test`                                    | Run project tests (best-effort; Python or Node)                               |
 | `/lint`                                    | Run project lint (best-effort; Python or Node)                                |
@@ -656,6 +681,14 @@ pip install ".[vector]"
 | `COGEM_CODEX_WORKDIR`               | Absolute path passed to Codex `-C` (workspace root)                                                                                              |
 | `COGEM_CODEX_MODEL`                 | Default Codex LLM ID when `--codex-model` is not passed                                                                                          |
 | `COGEM_GEMINI_MODEL`                | Default Gemini LLM ID when `--gemini-model` is not passed                                                                                        |
+| `COGEM_CLAUDE_MODEL`                | Default Claude LLM ID when `--claude-model` is not passed                                                                                        |
+| `COGEM_ROLE_PROVIDER_MAP`           | Role mapping override: comma-separated `role=provider` pairs (e.g. `coder=claude,reviewer=gemini`)                                             |
+| `COGEM_CODEX_BACKEND`               | Backend mode for codex provider: `auto|sdk|cli`                                                                                                  |
+| `COGEM_GEMINI_BACKEND`              | Backend mode for gemini provider: `auto|sdk|cli`                                                                                                 |
+| `COGEM_CLAUDE_BACKEND`              | Backend mode for claude provider: `sdk`                                                                                                          |
+| `COGEM_CODEX_SDK_MODEL`             | SDK model used by codex provider when using OpenAI SDK                                                                                           |
+| `COGEM_GEMINI_SDK_MODEL`            | SDK model used by gemini provider when using Google GenAI SDK                                                                                    |
+| `COGEM_CLAUDE_SDK_MODEL`            | SDK model used by claude provider when using Anthropic SDK                                                                                       |
 | `COGEM_SUBPROCESS_TIMEOUT_SEC`      | Integer seconds; abort a stuck `codex` / `gemini` subprocess after this time                                                                     |
 | `COGEM_STREAM_DIFFS`                | `1`/`0` — stream a live unified diff during Codex improvements (opt-in; only when stdout is a TTY)                                               |
 | `COGEM_VALIDATION_DOCKER`           | `yes` / `no` — prefer Docker-based validation backend (tests/lint/typecheck). See `--validation-docker`                                          |
