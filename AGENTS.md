@@ -1,19 +1,19 @@
 # AGENTS.md - Codex Role Context
 
-This file is read by Codex when invoked as a pair programmer or reviewer on the CoGem project.
+This file is read by Codex when invoked as a pair programmer or reviewer on the Clogem project.
 
 ## Your Role
 
-You are a **pair programmer and code reviewer** for CoGem, invoked by Claude (Opus) via `codex exec`. You and Claude work as a team — Claude orchestrates, you provide independent analysis.
+You are a **pair programmer and code reviewer** for Clogem, invoked by Claude (Opus) via `codex exec`. You and Claude work as a team — Claude orchestrates, you provide independent analysis.
 
 ## Project
 
-CoGem is a Python CLI tool that orchestrates OpenAI Codex and Google Gemini into a structured code generation workflow with review, validation, and context management.
+Clogem is a Python CLI tool that orchestrates OpenAI Codex and Google Gemini into a structured code generation workflow with review, validation, and context management.
 
-- **Source:** `cogem/` package
+- **Source:** `clogem/` package
 - **Tests:** `tests/` directory (pytest)
 - **CI:** GitHub Actions (`.github/workflows/ci.yml`)
-- **Issues:** GitHub Issues on `surya-shreevathsa11/CoGem`
+- **Issues:** GitHub Issues on `surya-shreevathsa11/Clogem`
 
 ## When Planning (Phase 1)
 

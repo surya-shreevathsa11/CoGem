@@ -1,6 +1,6 @@
 """Tests for prerequisite-first / ordered intent detection."""
 
-from cogem.task_intent import detect_prerequisite_first_task
+from clogem.task_intent import detect_prerequisite_first_task
 
 
 def test_prerequisite_before_that_tell_me():

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cogem.symbols import TagMatch, SymbolIndex
+from clogem.symbols import TagMatch, SymbolIndex
 
 
 def test_resolve_symbol_snippet(tmp_path: Path):

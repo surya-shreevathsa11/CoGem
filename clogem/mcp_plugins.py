@@ -53,7 +53,7 @@ def _write_message(proc: subprocess.Popen, obj: Dict[str, Any]) -> None:
 
 
 def _load_specs_from_env() -> Dict[str, MCPPluginSpec]:
-    raw = (os.environ.get("COGEM_MCP_PLUGINS_JSON") or "").strip()
+    raw = (os.environ.get("CLOGEM_MCP_PLUGINS_JSON") or "").strip()
     if not raw:
         return {}
     try:
@@ -82,10 +82,10 @@ def _load_specs_from_env() -> Dict[str, MCPPluginSpec]:
 def _load_builtin_specs() -> Dict[str, MCPPluginSpec]:
     # Enable by setting *_CMD and optional *_ARGS env vars.
     builtins = {
-        "jira": ("COGEM_MCP_JIRA_CMD", "COGEM_MCP_JIRA_ARGS"),
-        "sentry": ("COGEM_MCP_SENTRY_CMD", "COGEM_MCP_SENTRY_ARGS"),
-        "datadog": ("COGEM_MCP_DATADOG_CMD", "COGEM_MCP_DATADOG_ARGS"),
-        "dbschema": ("COGEM_MCP_DBSCHEMA_CMD", "COGEM_MCP_DBSCHEMA_ARGS"),
+        "jira": ("CLOGEM_MCP_JIRA_CMD", "CLOGEM_MCP_JIRA_ARGS"),
+        "sentry": ("CLOGEM_MCP_SENTRY_CMD", "CLOGEM_MCP_SENTRY_ARGS"),
+        "datadog": ("CLOGEM_MCP_DATADOG_CMD", "CLOGEM_MCP_DATADOG_ARGS"),
+        "dbschema": ("CLOGEM_MCP_DBSCHEMA_CMD", "CLOGEM_MCP_DBSCHEMA_ARGS"),
     }
     out: Dict[str, MCPPluginSpec] = {}
     for name, (k_cmd, k_args) in builtins.items():
@@ -94,7 +94,7 @@ def _load_builtin_specs() -> Dict[str, MCPPluginSpec]:
             continue
         args_raw = (os.environ.get(k_args) or "").strip()
         args = shlex.split(args_raw, posix=os.name != "nt") if args_raw else []
-        timeout = max(20, int((os.environ.get("COGEM_MCP_TIMEOUT_SEC") or "60").strip() or "60"))
+        timeout = max(20, int((os.environ.get("CLOGEM_MCP_TIMEOUT_SEC") or "60").strip() or "60"))
         out[name] = MCPPluginSpec(name=name, cmd=cmd, args=args, env={}, timeout_sec=timeout)
     return out
 
@@ -137,7 +137,7 @@ def _initialize(proc: subprocess.Popen, timeout_sec: int) -> Tuple[bool, str]:
             "params": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "cogem", "version": "0.1"},
+                "clientInfo": {"name": "clogem", "version": "0.1"},
             },
         },
     )

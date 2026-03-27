@@ -1,6 +1,6 @@
 # STITCH / WEBSITE / FRONTEND TASKS (STRICT)
 
-These rules apply when Cogem is refining **UI-heavy** work (websites, landing pages, dashboards, HTML/CSS/JS frontends), especially after **Google Stitch** output or user-provided markup.
+These rules apply when Clogem is refining **UI-heavy** work (websites, landing pages, dashboards, HTML/CSS/JS frontends), especially after **Google Stitch** output or user-provided markup.
 
 ## Non-negotiables
 

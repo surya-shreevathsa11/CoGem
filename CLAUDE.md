@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**CoGem** (Codex + Gemini) is a Python CLI tool that orchestrates multiple AI models into a structured code generation workflow. It combines OpenAI Codex for drafting, Google Gemini for independent review, and validation loops for quality assurance.
+**Clogem** (Codex + Gemini) is a Python CLI tool that orchestrates multiple AI models into a structured code generation workflow. It combines OpenAI Codex for drafting, Google Gemini for independent review, and validation loops for quality assurance.
 
 ## Critical Rules
 
@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Branch naming:** `feat/<summary>`, `fix/<summary>`, `chore/<summary>`
 
 ### Task Management
-- **System:** GitHub Issues on `surya-shreevathsa11/CoGem`
+- **System:** GitHub Issues on `surya-shreevathsa11/Clogem`
 - **All work is tracked via GitHub Issues.** Before starting work, confirm which issue(s) you are addressing.
 - **Assign the issue** to whoever is working on it (`gh issue edit N --add-assignee USERNAME`).
 - **Assign the PR** to the same person (`gh pr edit N --add-assignee USERNAME`).
@@ -37,10 +37,10 @@ python -m pytest -q
 python -m pytest -v -k "test_function_name"
 
 # Lint (if ruff available)
-ruff check cogem/ tests/
+ruff check clogem/ tests/
 
 # Type check (if pyright available)
-pyright cogem/
+pyright clogem/
 
 # Build package
 python -m build
@@ -52,7 +52,7 @@ pre-commit run --all-files
 ## Architecture
 
 ```
-cogem/
+clogem/
 ├── cli.py              # Main REPL and orchestration (monolith — decomposition planned)
 ├── llm_clients.py      # OpenAI + Google GenAI SDK wrappers
 ├── services/
@@ -119,7 +119,7 @@ Every task goes through all four phases. No skipping, even for small tasks.
 **Step 2 — Codex scopes independently.** Give Codex only the raw GitHub issue — the same inputs you started with. Do NOT tell it what you found or what approach you prefer.
 
 ```bash
-codex exec "You are scoping a task independently. Read GitHub issue #N: 'gh issue view N --repo surya-shreevathsa11/CoGem --json body,title'. Read whatever source files you think are relevant. Give your assessment: what's the right approach, what are the edge cases, what should the acceptance criteria be?" --full-auto
+codex exec "You are scoping a task independently. Read GitHub issue #N: 'gh issue view N --repo surya-shreevathsa11/Clogem --json body,title'. Read whatever source files you think are relevant. Give your assessment: what's the right approach, what are the edge cases, what should the acceptance criteria be?" --full-auto
 ```
 
 **Step 3 — Compare and consolidate.** Where you agree, you're probably right. Where you disagree, investigate why. Reconcile into a single plan.
@@ -140,7 +140,7 @@ codex exec "You are scoping a task independently. Read GitHub issue #N: 'gh issu
 After implementation, before pushing, Claude invokes Codex to review:
 
 ```bash
-codex exec "You are reviewing implementation for GitHub issue #N. Run 'gh issue view N --repo surya-shreevathsa11/CoGem --json body,title' to read the scope. Run 'git diff main...HEAD' to see changes. Review the FULL implementation — trace changes through the codebase, not just the diff. Check: missed requirements, bugs, missing tests, security issues, over-engineering. Verify tests were added/updated. Run 'python -m pytest -q' to check tests pass. Categorize: BLOCKING (must fix) vs NON-BLOCKING (follow-up issue). Be specific — file paths and line numbers." --full-auto
+codex exec "You are reviewing implementation for GitHub issue #N. Run 'gh issue view N --repo surya-shreevathsa11/Clogem --json body,title' to read the scope. Run 'git diff main...HEAD' to see changes. Review the FULL implementation — trace changes through the codebase, not just the diff. Check: missed requirements, bugs, missing tests, security issues, over-engineering. Verify tests were added/updated. Run 'python -m pytest -q' to check tests pass. Categorize: BLOCKING (must fix) vs NON-BLOCKING (follow-up issue). Be specific — file paths and line numbers." --full-auto
 ```
 
 #### Phase 4: Resolution (Claude <-> Codex iterate until APPROVED)
@@ -229,7 +229,7 @@ Use the `/commit` command or the `git-commit-helper` agent for assisted commit m
 
 ### Scope
 
-Use the cogem module name as scope:
+Use the clogem module name as scope:
 
 `cli`, `llm-clients`, `routing`, `pipeline`, `commands`, `stitch`, `graph`, `symbols`, `repo-awareness`, `vector-index`, `validation`, `mcp`, `command-policy`, `git-context`, `pdf-tools`, `task-intent`, `visual-review`, `write-safety`, `config`, `deps`
 
@@ -272,7 +272,7 @@ Closes #3
 refactor(cli): extract validation logic into validation module
 
 Move _run_validation_suite, _run_validation_suite_docker, and related
-helpers from cli.py into cogem/validation.py as the first step of
+helpers from cli.py into clogem/validation.py as the first step of
 cli.py decomposition.
 
 Refs #6
@@ -293,7 +293,7 @@ Refs #6
 ### Configuration
 - All config is currently via `os.environ.get()` calls scattered across modules
 - Centralization into a typed `Settings` object is planned (see GitHub Issue #10)
-- Env var prefix: `COGEM_`
+- Env var prefix: `CLOGEM_`
 
 ### Error Handling
 - Many modules use graceful degradation (try feature, fall back silently)
@@ -302,12 +302,12 @@ Refs #6
 
 ### LLM Client Usage
 - `llm_clients.py` provides sync + async wrappers for OpenAI and Gemini
-- SDK-first with CLI fallback (`COGEM_CODEX_BACKEND=auto|sdk|cli`)
+- SDK-first with CLI fallback (`CLOGEM_CODEX_BACKEND=auto|sdk|cli`)
 - Both sync and async variants available
 
 ## Known Issues
 
 Active GitHub Issues track all known problems and planned improvements. Check:
 ```bash
-gh issue list --repo surya-shreevathsa11/CoGem
+gh issue list --repo surya-shreevathsa11/Clogem
 ```

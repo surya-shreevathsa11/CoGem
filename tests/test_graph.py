@@ -2,19 +2,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cogem.graph import (
+from clogem.graph import (
     build_symbol_dependency_context_from_py_files,
     build_symbol_dependency_context_from_source_files,
     extract_js_imported_symbols,
     extract_python_imported_symbols,
 )
-from cogem.symbols import TagMatch, SymbolIndex
+from clogem.symbols import TagMatch, SymbolIndex
 
 
 def test_extract_python_imported_symbols_from_importfrom():
     src = """
-from cogem.symbols import SymbolIndex
-from cogem.task_intent import detect_prerequisite_first_task as d
+from clogem.symbols import SymbolIndex
+from clogem.task_intent import detect_prerequisite_first_task as d
 """
     out = extract_python_imported_symbols(src)
     names = {o.symbol for o in out}
@@ -41,7 +41,7 @@ def test_build_symbol_dependency_context_prefers_imported_module_path(tmp_path: 
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    symbols_py = repo / "cogem" / "symbols.py"
+    symbols_py = repo / "clogem" / "symbols.py"
     symbols_py.parent.mkdir()
     symbols_py.write_text(
         "\n".join(
@@ -56,12 +56,12 @@ def test_build_symbol_dependency_context_prefers_imported_module_path(tmp_path: 
         encoding="utf-8",
     )
 
-    # Create a python file that imports from cogem.symbols
+    # Create a python file that imports from clogem.symbols
     use = repo / "use.py"
     use.write_text(
         "\n".join(
             [
-                "from cogem.symbols import SymbolIndex",
+                "from clogem.symbols import SymbolIndex",
                 "",
                 "def x():",
                 "    return SymbolIndex()",

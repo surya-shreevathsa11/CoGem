@@ -66,7 +66,7 @@ class TestPermissionGateExistsInSource:
     so removing it would break the test.
     """
 
-    _CLI_SOURCE = Path(__file__).resolve().parents[1] / "cogem" / "cli.py"
+    _CLI_SOURCE = Path(__file__).resolve().parents[1] / "clogem" / "cli.py"
 
     def _get_run_written_artifacts_source(self) -> str:
         """Extract the source of run_written_artifacts from cli.py."""

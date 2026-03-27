@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pypdf import PdfReader
 
-from cogem.pdf_tools import generate_pdf_from_text
+from clogem.pdf_tools import generate_pdf_from_text
 
 
 def test_generate_pdf_from_text_creates_file(tmp_path: Path):

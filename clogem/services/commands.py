@@ -49,7 +49,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             )
             console.print(
                 Text(
-                    f"  From startup (--codex-model / COGEM_CODEX_MODEL): {_codex_model or '(none)'}",
+                    f"  From startup (--codex-model / CLOGEM_CODEX_MODEL): {_codex_model or '(none)'}",
                     style=MUTED,
                 )
             )
@@ -94,7 +94,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             )
             console.print(
                 Text(
-                    f"  From startup (--gemini-model / COGEM_GEMINI_MODEL): {_gemini_model or '(none)'}",
+                    f"  From startup (--gemini-model / CLOGEM_GEMINI_MODEL): {_gemini_model or '(none)'}",
                     style=MUTED,
                 )
             )
@@ -137,7 +137,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             )
             console.print(
                 Text(
-                    f"  From startup (--claude-model / COGEM_CLAUDE_MODEL): {_claude_model or '(none)'}",
+                    f"  From startup (--claude-model / CLOGEM_CLAUDE_MODEL): {_claude_model or '(none)'}",
                     style=MUTED,
                 )
             )
@@ -356,7 +356,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         return True, False
 
     if task.startswith("/mcp/plugins"):
-        from cogem.mcp_plugins import list_plugins
+        from clogem.mcp_plugins import list_plugins
 
         names = list_plugins()
         section_rule("MCP plugins")
@@ -368,8 +368,8 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             console.print(Text("No MCP plugins configured.", style=MUTED))
             console.print(
                 Text(
-                    "Set COGEM_MCP_<NAME>_CMD/ARGS (jira/sentry/datadog/dbschema) "
-                    "or COGEM_MCP_PLUGINS_JSON.",
+                    "Set CLOGEM_MCP_<NAME>_CMD/ARGS (jira/sentry/datadog/dbschema) "
+                    "or CLOGEM_MCP_PLUGINS_JSON.",
                     style=MUTED,
                 )
             )
@@ -381,7 +381,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         if not rest:
             console.print(Text("Usage: /mcp/tools <plugin>", style=MUTED))
             return True, False
-        from cogem.mcp_plugins import list_tools
+        from clogem.mcp_plugins import list_tools
 
         ok, out = list_tools(rest)
         section_rule(f"MCP tools: {rest}")
@@ -417,7 +417,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             except json.JSONDecodeError:
                 console.print(Text("Invalid json-args JSON.", style=LOG_WARN))
                 return True, False
-        from cogem.mcp_plugins import call_tool
+        from clogem.mcp_plugins import call_tool
 
         ok, out = call_tool(plugin, tool, args_obj)
         section_rule(f"MCP call: {plugin}.{tool}")
@@ -435,7 +435,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             console.print(Text("Usage: /rag/search <query>", style=MUTED))
             return True, False
         try:
-            from cogem.vector_index import VectorIndexConfig, semantic_search_repo
+            from clogem.vector_index import VectorIndexConfig, semantic_search_repo
 
             rows = semantic_search_repo(
                 repo_root=ctx["_repo_root"](),
@@ -443,13 +443,13 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
                 config=VectorIndexConfig(
                     enabled=True,
                     rebuild=bool(
-                        os.environ.get("COGEM_VECTOR_REBUILD", "0").strip().lower()
+                        os.environ.get("CLOGEM_VECTOR_REBUILD", "0").strip().lower()
                         in ("1", "true", "yes", "on")
                     ),
-                    top_k=int(os.environ.get("COGEM_VECTOR_TOP_K", "8")),
-                    max_chunk_chars=int(os.environ.get("COGEM_VECTOR_CHUNK_CHARS", "2500")),
+                    top_k=int(os.environ.get("CLOGEM_VECTOR_TOP_K", "8")),
+                    max_chunk_chars=int(os.environ.get("CLOGEM_VECTOR_CHUNK_CHARS", "2500")),
                     max_context_chars=int(
-                        os.environ.get("COGEM_AUTO_REPO_CONTEXT_MAX_CHARS", "8000")
+                        os.environ.get("CLOGEM_AUTO_REPO_CONTEXT_MAX_CHARS", "8000")
                     ),
                 ),
             )
@@ -483,7 +483,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             console.print(Text(f"### {p}", style=MUTED))
             console.print(preview)
             console.print()
-            if shown >= int(os.environ.get("COGEM_VECTOR_TOP_K", "8")):
+            if shown >= int(os.environ.get("CLOGEM_VECTOR_TOP_K", "8")):
                 break
         return True, False
 
@@ -526,7 +526,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
                 return True, False
             try:
                 max_b = max(
-                    4096, int(os.environ.get("COGEM_AT_MAX_FILE_BYTES", "400000"))
+                    4096, int(os.environ.get("CLOGEM_AT_MAX_FILE_BYTES", "400000"))
                 )
             except ValueError:
                 max_b = 400000
@@ -537,7 +537,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             console.print(Text("No PDF content provided.", style=LOG_WARN))
             console.print()
             return True, False
-        from cogem.pdf_tools import generate_pdf_from_text, pdf_path_for_text_request
+        from clogem.pdf_tools import generate_pdf_from_text, pdf_path_for_text_request
 
         final_path, display_name = pdf_path_for_text_request(os.getcwd(), desired_out)
         roots = ctx["_mention_roots_list"]()

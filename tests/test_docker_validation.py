@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cogem.docker_validation import (
+from clogem.docker_validation import (
     normalize_repo_kind_for_docker,
     plan_docker_dependency_install,
 )

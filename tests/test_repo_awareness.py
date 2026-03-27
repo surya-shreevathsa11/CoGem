@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cogem.repo_awareness import (
+from clogem.repo_awareness import (
     AutoRepoContextConfig,
     build_repo_context_block,
     expand_dependency_closure,

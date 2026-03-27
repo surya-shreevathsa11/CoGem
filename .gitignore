@@ -12,4 +12,4 @@ build/
 memory.json
 
 # Vector index (local, rebuilt per machine)
-.cogem/
+.clogem/

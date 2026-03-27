@@ -40,7 +40,7 @@ def _looks_like_filename(mention: str) -> bool:
 
 
 def _default_cache_path(repo_root: str) -> str:
-    base = os.path.join(repo_root, ".cogem", "cache")
+    base = os.path.join(repo_root, ".clogem", "cache")
     os.makedirs(base, exist_ok=True)
     return os.path.join(base, "ctags_index.json")
 

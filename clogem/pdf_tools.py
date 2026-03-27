@@ -109,7 +109,7 @@ def pdf_path_for_text_request(cwd: str, desired_out: str | None) -> Tuple[str, s
     Returns (final_path, display_name).
     """
     if not desired_out or not desired_out.strip():
-        desired_out = "cogem-output.pdf"
+        desired_out = "clogem-output.pdf"
     desired_out = desired_out.strip().strip('"').strip("'")
 
     # Force into cwd for safety when user passes a bare filename.

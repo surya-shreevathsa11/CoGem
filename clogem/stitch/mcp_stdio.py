@@ -1,7 +1,7 @@
 """
 Minimal MCP client over stdio (Content-Length framing) for stitch-mcp.
 
-stitch-mcp (npm) is an MCP *server*: cogem spawns it and speaks JSON-RPC to call
+stitch-mcp (npm) is an MCP *server*: clogem spawns it and speaks JSON-RPC to call
 tools like generate_screen_from_text. Requires Node/npx and Google auth as per
 https://www.npmjs.com/package/stitch-mcp (gcloud, GOOGLE_CLOUD_PROJECT, etc.).
 """
@@ -22,7 +22,7 @@ _DEFAULT_GENERATE = "generate_screen_from_text"
 
 
 def stitch_mcp_enabled() -> bool:
-    raw = (os.environ.get("COGEM_STITCH_MCP") or "").strip().lower()
+    raw = (os.environ.get("CLOGEM_STITCH_MCP") or "").strip().lower()
     if raw in ("0", "false", "no", "off", "disabled"):
         return False
     # Default ON for frontend Stitch-first flow.
@@ -30,8 +30,8 @@ def stitch_mcp_enabled() -> bool:
 
 
 def _mcp_argv() -> List[str]:
-    cmd = (os.environ.get("COGEM_STITCH_MCP_CMD") or "npx").strip()
-    args_raw = (os.environ.get("COGEM_STITCH_MCP_ARGS") or "-y stitch-mcp").strip()
+    cmd = (os.environ.get("CLOGEM_STITCH_MCP_CMD") or "npx").strip()
+    args_raw = (os.environ.get("CLOGEM_STITCH_MCP_ARGS") or "-y stitch-mcp").strip()
     return [cmd] + _split_args(args_raw)
 
 
@@ -143,15 +143,15 @@ def call_stitch_mcp_generate(stitch_prompt: str) -> Tuple[Optional[str], str]:
     if not shutil.which(_mcp_argv()[0]) and not os.path.isfile(_mcp_argv()[0]):
         return None, f"MCP: command not found: {_mcp_argv()[0]}"
 
-    tool = (os.environ.get("COGEM_STITCH_MCP_TOOL") or _DEFAULT_GENERATE).strip()
-    prompt_key = (os.environ.get("COGEM_STITCH_MCP_PROMPT_KEY") or "prompt").strip()
+    tool = (os.environ.get("CLOGEM_STITCH_MCP_TOOL") or _DEFAULT_GENERATE).strip()
+    prompt_key = (os.environ.get("CLOGEM_STITCH_MCP_PROMPT_KEY") or "prompt").strip()
 
     argv = _mcp_argv()
     env = os.environ.copy()
     proc: Optional[subprocess.Popen] = None
     t_err: Optional[threading.Thread] = None
     try:
-        timeout = max(60, int(os.environ.get("COGEM_STITCH_MCP_TIMEOUT_SEC", "300")))
+        timeout = max(60, int(os.environ.get("CLOGEM_STITCH_MCP_TIMEOUT_SEC", "300")))
     except ValueError:
         timeout = 300
 
@@ -200,7 +200,7 @@ def call_stitch_mcp_generate(stitch_prompt: str) -> Tuple[Optional[str], str]:
                 "params": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {},
-                    "clientInfo": {"name": "cogem", "version": "0.1"},
+                    "clientInfo": {"name": "clogem", "version": "0.1"},
                 },
             },
         )
@@ -230,12 +230,12 @@ def call_stitch_mcp_generate(stitch_prompt: str) -> Tuple[Optional[str], str]:
         )
 
         args: Dict[str, Any] = {prompt_key: stitch_prompt}
-        extra = (os.environ.get("COGEM_STITCH_MCP_TOOL_ARGS_JSON") or "").strip()
+        extra = (os.environ.get("CLOGEM_STITCH_MCP_TOOL_ARGS_JSON") or "").strip()
         if extra:
             try:
                 args.update(json.loads(extra))
             except json.JSONDecodeError:
-                return None, "COGEM_STITCH_MCP_TOOL_ARGS_JSON is not valid JSON"
+                return None, "CLOGEM_STITCH_MCP_TOOL_ARGS_JSON is not valid JSON"
 
         call_id = next_id
         _write_message(

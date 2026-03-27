@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cogem.command_policy import validate_local_command_args
+from clogem.command_policy import validate_local_command_args
 
 
 def test_blocks_shell_executable():

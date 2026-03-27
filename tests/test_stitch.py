@@ -2,13 +2,13 @@
 
 import pytest
 
-from cogem.stitch import (
+from clogem.stitch import (
     build_stitch_prompt,
     detect_frontend_task,
     detect_stitch_frontend_heavy_task,
     should_skip_stitch_due_to_attachments,
 )
-from cogem.stitch.adapters import looks_like_ui_content, try_stitch_adapters
+from clogem.stitch.adapters import looks_like_ui_content, try_stitch_adapters
 
 
 def test_detect_frontend_landing_page():
@@ -56,21 +56,21 @@ def test_looks_like_ui_content():
 
 
 def test_try_stitch_adapters_falls_back_manual(monkeypatch):
-    monkeypatch.delenv("COGEM_STITCH_CLI", raising=False)
-    monkeypatch.delenv("COGEM_STITCH_HTTP_URL", raising=False)
-    monkeypatch.delenv("COGEM_STITCH_MCP", raising=False)
+    monkeypatch.delenv("CLOGEM_STITCH_CLI", raising=False)
+    monkeypatch.delenv("CLOGEM_STITCH_HTTP_URL", raising=False)
+    monkeypatch.delenv("CLOGEM_STITCH_MCP", raising=False)
     r = try_stitch_adapters("Design a hero section")
     assert r.mode == "manual"
 
 
 def test_stitch_mcp_flag(monkeypatch):
-    from cogem.stitch.mcp_stdio import stitch_mcp_enabled
+    from clogem.stitch.mcp_stdio import stitch_mcp_enabled
 
-    monkeypatch.delenv("COGEM_STITCH_MCP", raising=False)
+    monkeypatch.delenv("CLOGEM_STITCH_MCP", raising=False)
     assert stitch_mcp_enabled()
-    monkeypatch.setenv("COGEM_STITCH_MCP", "0")
+    monkeypatch.setenv("CLOGEM_STITCH_MCP", "0")
     assert not stitch_mcp_enabled()
-    monkeypatch.setenv("COGEM_STITCH_MCP", "1")
+    monkeypatch.setenv("CLOGEM_STITCH_MCP", "1")
     assert stitch_mcp_enabled()
 
 

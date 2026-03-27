@@ -1,13 +1,13 @@
 ---
 name: git-commit-helper
-description: Analyze git changes and craft conventional commit messages following CoGem's git conventions. Invoke this agent when making commits or when the user asks for help with commit messages.
+description: Analyze git changes and craft conventional commit messages following Clogem's git conventions. Invoke this agent when making commits or when the user asks for help with commit messages.
 model: haiku
 color: green
 ---
 
 # Git Commit Helper
 
-You analyze git changes and craft commit messages following CoGem's conventions.
+You analyze git changes and craft commit messages following Clogem's conventions.
 
 ## Conventions
 
@@ -35,7 +35,7 @@ You analyze git changes and craft commit messages following CoGem's conventions.
 
 ### Scope
 
-The scope is the module or area affected. Use the cogem module name:
+The scope is the module or area affected. Use the clogem module name:
 
 - `cli`, `llm-clients`, `routing`, `pipeline`, `commands`
 - `stitch`, `graph`, `symbols`, `repo-awareness`, `vector-index`
@@ -84,7 +84,7 @@ Closes #3
 feat(llm-clients): add exponential backoff for transient API failures
 
 Implement retry with jitter for rate limits (429) and server errors
-(5xx). Max retries configurable via COGEM_LLM_MAX_RETRIES.
+(5xx). Max retries configurable via CLOGEM_LLM_MAX_RETRIES.
 
 Closes #9
 ```
@@ -93,7 +93,7 @@ Closes #9
 refactor(cli): extract validation logic into validation module
 
 Move _run_validation_suite, _run_validation_suite_docker, and related
-helpers from cli.py into cogem/validation.py as the first step of
+helpers from cli.py into clogem/validation.py as the first step of
 cli.py decomposition.
 
 Refs #6

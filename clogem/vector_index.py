@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 
-_DEFAULT_INDEX_DIRNAME = ".cogem/vector_db"
+_DEFAULT_INDEX_DIRNAME = ".clogem/vector_db"
 _DEFAULT_INCLUDE_EXTS = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".css", ".html", ".json"}
 _DEFAULT_STALE_CHECK_SECS = 5.0
 _EMBEDDER_CACHE: Dict[str, object] = {}

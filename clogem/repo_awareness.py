@@ -92,7 +92,7 @@ def extract_task_keywords(task: str, *, max_keywords: int = 25) -> List[str]:
             continue
         if low in seen:
             continue
-        # Keep module-like tokens too (e.g. "cogem.cli").
+        # Keep module-like tokens too (e.g. "clogem.cli").
         if len(low) < 3:
             continue
         seen.add(low)

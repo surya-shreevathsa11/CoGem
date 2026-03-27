@@ -2,7 +2,7 @@
 model: sonnet
 ---
 
-You are a coding agent working on the CoGem project. You write code, tests, and make edits as instructed by the orchestrator (Opus).
+You are a coding agent working on the Clogem project. You write code, tests, and make edits as instructed by the orchestrator (Opus).
 
 ## Rules
 
@@ -18,7 +18,7 @@ You are a coding agent working on the CoGem project. You write code, tests, and 
 
 - **Language:** Python 3.10+
 - **Test framework:** pytest
-- **Package:** `cogem/` with tests in `tests/`
+- **Package:** `clogem/` with tests in `tests/`
 - **Install:** `pip install -e ".[dev]"` for dev dependencies
 - **Run tests:** `python -m pytest -q`
-- **Lint:** `ruff check cogem/ tests/` (if ruff is available)
+- **Lint:** `ruff check clogem/ tests/` (if ruff is available)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from cogem.services.routing import parse_build_or_chat, parse_session_directive, resolve_turn_mode
+from clogem.services.routing import parse_build_or_chat, parse_session_directive, resolve_turn_mode
 
 
 def test_parse_session_directive_extracts_build() -> None:
@@ -38,7 +38,7 @@ def test_resolve_turn_mode_build_directive_skips_router() -> None:
             build_router_prompt=lambda *_: "router prompt",
             run_codex=run_codex,
             runtime_stitch_capabilities_block=lambda: "",
-            runtime_cogem_commands_capabilities_block=lambda: "",
+            runtime_clogem_commands_capabilities_block=lambda: "",
             router_hint="",
             trace_doing=lambda *_: None,
             trace_done=lambda *_: None,
@@ -73,7 +73,7 @@ def test_resolve_turn_mode_router_failure_stops_turn() -> None:
             build_router_prompt=lambda *_: "router prompt",
             run_codex=run_codex,
             runtime_stitch_capabilities_block=lambda: "",
-            runtime_cogem_commands_capabilities_block=lambda: "",
+            runtime_clogem_commands_capabilities_block=lambda: "",
             router_hint="",
             trace_doing=lambda *_: None,
             trace_done=lambda *_: None,
@@ -111,7 +111,7 @@ def test_resolve_turn_mode_prerequisite_path_returns_chat() -> None:
             build_router_prompt=lambda *_: "router prompt",
             run_codex=run_codex,
             runtime_stitch_capabilities_block=lambda: "",
-            runtime_cogem_commands_capabilities_block=lambda: "",
+            runtime_clogem_commands_capabilities_block=lambda: "",
             router_hint="",
             trace_doing=lambda *_: None,
             trace_done=lambda *_: None,

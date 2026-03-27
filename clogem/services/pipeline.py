@@ -8,17 +8,17 @@ import subprocess
 import sys
 from typing import Any, Dict, List, Set, Tuple
 
-from cogem.graph import build_symbol_dependency_context_from_source_files
-from cogem.repo_awareness import AutoRepoContextConfig, auto_repo_context_block_for_task
-from cogem.stitch import (
+from clogem.graph import build_symbol_dependency_context_from_source_files
+from clogem.repo_awareness import AutoRepoContextConfig, auto_repo_context_block_for_task
+from clogem.stitch import (
     build_stitch_prompt,
     detect_frontend_task,
     detect_stitch_frontend_heavy_task,
     should_skip_stitch_due_to_attachments,
     try_stitch_adapters,
 )
-from cogem.stitch.adapters import format_stitch_context_for_codex
-from cogem.task_intent import detect_prerequisite_first_task
+from clogem.stitch.adapters import format_stitch_context_for_codex
+from clogem.task_intent import detect_prerequisite_first_task
 
 
 def _copy_to_clipboard(text: str) -> bool:
@@ -109,7 +109,7 @@ def expand_rag_context_with_symbols(
     if not rag_chunks:
         return ""
     try:
-        from cogem.symbols import SymbolIndex
+        from clogem.symbols import SymbolIndex
     except Exception:
         return ""
 
@@ -217,36 +217,36 @@ def build_context_blocks(
         return "\n".join(parts).strip()
 
     auto_repo_context_on = (
-        os.environ.get("COGEM_AUTO_REPO_CONTEXT", "1").strip().lower()
+        os.environ.get("CLOGEM_AUTO_REPO_CONTEXT", "1").strip().lower()
         not in ("0", "false", "no", "off", "disabled")
     )
-    auto_repo_max_chars = int(os.environ.get("COGEM_AUTO_REPO_CONTEXT_MAX_CHARS", "8000"))
-    auto_repo_max_files = int(os.environ.get("COGEM_AUTO_REPO_CONTEXT_MAX_FILES", "6"))
-    auto_repo_max_depth = int(os.environ.get("COGEM_AUTO_REPO_CONTEXT_MAX_DEPTH", "2"))
+    auto_repo_max_chars = int(os.environ.get("CLOGEM_AUTO_REPO_CONTEXT_MAX_CHARS", "8000"))
+    auto_repo_max_files = int(os.environ.get("CLOGEM_AUTO_REPO_CONTEXT_MAX_FILES", "6"))
+    auto_repo_max_depth = int(os.environ.get("CLOGEM_AUTO_REPO_CONTEXT_MAX_DEPTH", "2"))
 
     auto_context_block = ""
     if auto_repo_context_on:
         try:
             vector_rag_on = (
-                os.environ.get("COGEM_VECTOR_RAG", "0").strip().lower()
+                os.environ.get("CLOGEM_VECTOR_RAG", "0").strip().lower()
                 not in ("0", "false", "no", "off", "disabled")
             )
             if vector_rag_on:
                 try:
-                    from cogem.vector_index import (
+                    from clogem.vector_index import (
                         VectorIndexConfig,
                         semantic_search_repo,
                     )
                     vector_cfg = VectorIndexConfig(
                         enabled=True,
                         rebuild=bool(
-                            os.environ.get("COGEM_VECTOR_REBUILD", "0").strip().lower()
+                            os.environ.get("CLOGEM_VECTOR_REBUILD", "0").strip().lower()
                             in ("1", "true", "yes", "on")
                         ),
-                        top_k=int(os.environ.get("COGEM_VECTOR_TOP_K", "8")),
+                        top_k=int(os.environ.get("CLOGEM_VECTOR_TOP_K", "8")),
                         max_context_chars=auto_repo_max_chars,
                         max_chunk_chars=int(
-                            os.environ.get("COGEM_VECTOR_CHUNK_CHARS", "2500")
+                            os.environ.get("CLOGEM_VECTOR_CHUNK_CHARS", "2500")
                         ),
                     )
                     rag_rows = semantic_search_repo(
@@ -258,7 +258,7 @@ def build_context_blocks(
                         rag_rows, max_chars=auto_repo_max_chars
                     )
                     sym_rag_on = (
-                        os.environ.get("COGEM_SYM_RAG", "1").strip().lower()
+                        os.environ.get("CLOGEM_SYM_RAG", "1").strip().lower()
                         not in ("0", "false", "no", "off", "disabled")
                     )
                     if sym_rag_on and rag_rows:
@@ -271,10 +271,10 @@ def build_context_blocks(
                             rag_chunks,
                             repo_root=repo_root,
                             max_symbols=int(
-                                os.environ.get("COGEM_SYM_RAG_MAX_SYMBOLS", "12")
+                                os.environ.get("CLOGEM_SYM_RAG_MAX_SYMBOLS", "12")
                             ),
                             max_chars=int(
-                                os.environ.get("COGEM_SYM_RAG_MAX_CHARS", "3500")
+                                os.environ.get("CLOGEM_SYM_RAG_MAX_CHARS", "3500")
                             ),
                         )
                         if sym_block:
@@ -299,18 +299,18 @@ def build_context_blocks(
             auto_context_block = ""
 
     symbol_dep_context_on = (
-        os.environ.get("COGEM_SYMBOL_DEP_CONTEXT", "1").strip().lower()
+        os.environ.get("CLOGEM_SYMBOL_DEP_CONTEXT", "1").strip().lower()
         not in ("0", "false", "no", "off", "disabled")
     )
     symbol_dep_context_block = ""
     if symbol_dep_context_on:
         try:
             symbol_index_enabled = (
-                os.environ.get("COGEM_SYMBOL_INDEX", "1").strip().lower()
+                os.environ.get("CLOGEM_SYMBOL_INDEX", "1").strip().lower()
                 not in ("0", "false", "no", "off", "disabled")
             )
             if symbol_index_enabled:
-                from cogem.symbols import SymbolIndex
+                from clogem.symbols import SymbolIndex
 
                 def _extract_mentioned_source_files(raw_task: str) -> List[str]:
                     files: List[str] = []
@@ -345,10 +345,10 @@ def build_context_blocks(
                         source_files=source_files,
                         symbol_index=idx,
                         max_symbols=int(
-                            os.environ.get("COGEM_SYMBOL_DEP_MAX_SYMBOLS", "20")
+                            os.environ.get("CLOGEM_SYMBOL_DEP_MAX_SYMBOLS", "20")
                         ),
                         max_chars=int(
-                            os.environ.get("COGEM_SYMBOL_DEP_MAX_CHARS", "4000")
+                            os.environ.get("CLOGEM_SYMBOL_DEP_MAX_CHARS", "4000")
                         ),
                     )
         except Exception:
@@ -455,7 +455,7 @@ async def maybe_run_stitch_stage(
                     console.print(
                         Text(
                             "Non-interactive stdin: cannot prompt for Stitch paste. "
-                            "Set COGEM_STITCH_CLI or COGEM_STITCH_HTTP_URL, or run cogem in a real terminal.",
+                            "Set CLOGEM_STITCH_CLI or CLOGEM_STITCH_HTTP_URL, or run clogem in a real terminal.",
                             style=MUTED,
                         )
                     )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cogem.write_safety import (
+from clogem.write_safety import (
     apply_unified_diff_safely,
     parse_unified_diff,
     plan_safe_writes,

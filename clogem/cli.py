@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from typing import List
 
-# Boot palette (24-bit ANSI) — matches cogem rose theme, not plain white
+# Boot palette (24-bit ANSI) — matches clogem rose theme, not plain white
 _BOOT_ROSE = "\033[38;2;190;85;85m"
 _BOOT_SOFT = "\033[38;2;255;175;175m"
 _BOOT_BLUSH = "\033[38;2;255;200;200m"
@@ -144,7 +144,7 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
         _boot_type_line(row, 0.002, _BOOT_BLUSH)
     sys.stdout.write("\n")
     sys.stdout.flush()
-    _boot_type_line("cogem · build → review → evolve", 0.008, _BOOT_ROSE)
+    _boot_type_line("clogem · build → review → evolve", 0.008, _BOOT_ROSE)
     sys.stdout.write("\n")
     sys.stdout.flush()
 
@@ -155,7 +155,7 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
     if "codex" in req:
         codex_ready = _boot_run_step(
             "loading codex",
-            lambda: _cmd_exists(os.environ.get("COGEM_CODEX_CMD", ""), "codex")
+            lambda: _cmd_exists(os.environ.get("CLOGEM_CODEX_CMD", ""), "codex")
             or _openai_sdk_ready(),
             min_spin=0.35,
         )
@@ -163,7 +163,7 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
             sys.stdout.write("\n")
             sys.stdout.flush()
             sys.stdout.write(
-                f"{_BOOT_ERR}cogem cannot start: codex provider unavailable.{_BOOT_RESET}\n"
+                f"{_BOOT_ERR}clogem cannot start: codex provider unavailable.{_BOOT_RESET}\n"
             )
             sys.stdout.write(
                 f"{_BOOT_MUTED}Install Codex CLI or configure OPENAI_API_KEY + openai SDK.{_BOOT_RESET}\n"
@@ -174,7 +174,7 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
     if "gemini" in req:
         gemini_ready = _boot_run_step(
             "loading gemini",
-            lambda: _cmd_exists(os.environ.get("COGEM_GEMINI_CMD", ""), "gemini")
+            lambda: _cmd_exists(os.environ.get("CLOGEM_GEMINI_CMD", ""), "gemini")
             or _gemini_sdk_ready(),
             min_spin=0.35,
         )
@@ -182,7 +182,7 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
             sys.stdout.write("\n")
             sys.stdout.flush()
             sys.stdout.write(
-                f"{_BOOT_ERR}cogem cannot start: gemini provider unavailable.{_BOOT_RESET}\n"
+                f"{_BOOT_ERR}clogem cannot start: gemini provider unavailable.{_BOOT_RESET}\n"
             )
             sys.stdout.write(
                 f"{_BOOT_MUTED}Install Gemini CLI or configure GOOGLE_API_KEY/GEMINI_API_KEY + google-genai SDK.{_BOOT_RESET}\n"
@@ -200,7 +200,7 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
             sys.stdout.write("\n")
             sys.stdout.flush()
             sys.stdout.write(
-                f"{_BOOT_ERR}cogem cannot start: claude provider unavailable.{_BOOT_RESET}\n"
+                f"{_BOOT_ERR}clogem cannot start: claude provider unavailable.{_BOOT_RESET}\n"
             )
             sys.stdout.write(
                 f"{_BOOT_MUTED}Set ANTHROPIC_API_KEY and install anthropic SDK.{_BOOT_RESET}\n"
@@ -257,12 +257,12 @@ async def async_main():
         Style = None  # type: ignore
         ColorDepth = None  # type: ignore
 
-    from cogem.stitch import detect_stitch_frontend_heavy_task
-    from cogem.stitch.adapters import looks_like_ui_content
-    from cogem.task_intent import build_prerequisite_first_prompt, detect_prerequisite_first_task
-    from cogem.write_safety import apply_unified_diff_safely, plan_safe_writes
-    from cogem.command_policy import ALLOWED_EXECUTABLES, validate_local_command_args
-    from cogem.llm_clients import (
+    from clogem.stitch import detect_stitch_frontend_heavy_task
+    from clogem.stitch.adapters import looks_like_ui_content
+    from clogem.task_intent import build_prerequisite_first_prompt, detect_prerequisite_first_task
+    from clogem.write_safety import apply_unified_diff_safely, plan_safe_writes
+    from clogem.command_policy import ALLOWED_EXECUTABLES, validate_local_command_args
+    from clogem.llm_clients import (
         claude_generate,
         claude_generate_async,
         gemini_generate,
@@ -272,26 +272,26 @@ async def async_main():
         openai_generate,
         openai_generate_async,
     )
-    from cogem.role_mapping import needed_providers, resolve_role_provider_map
-    from cogem.services.commands import handle_pre_pipeline_command
-    from cogem.services.pipeline import build_context_blocks, maybe_run_stitch_stage
-    from cogem.services.routing import parse_session_directive, resolve_turn_mode
-    from cogem.visual_review import capture_frontend_screenshot
+    from clogem.role_mapping import needed_providers, resolve_role_provider_map
+    from clogem.services.commands import handle_pre_pipeline_command
+    from clogem.services.pipeline import build_context_blocks, maybe_run_stitch_stage
+    from clogem.services.routing import parse_session_directive, resolve_turn_mode
+    from clogem.visual_review import capture_frontend_screenshot
 
     _ap = argparse.ArgumentParser(
-        prog="cogem",
-        description="Cogem: Codex + Gemini dual-agent loop (generate, review, improve).",
+        prog="clogem",
+        description="Clogem: Codex + Gemini dual-agent loop (generate, review, improve).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "LLM models are chosen separately for Codex (draft/improve) and Gemini (review/summary).\n"
             "Omit both flags to let each CLI use its default model (no -m passed).\n"
             "\n"
             "Examples:\n"
-            "  cogem\n"
-            "  cogem --codex-model o3 --gemini-model gemini-2.5-pro\n"
-            "  cogem --role-provider coder=claude --claude-model claude-sonnet-4-6\n"
+            "  clogem\n"
+            "  clogem --codex-model o3 --gemini-model gemini-2.5-pro\n"
+            "  clogem --role-provider coder=claude --claude-model claude-sonnet-4-6\n"
             "\n"
-            "Env (when flags omitted): COGEM_CODEX_MODEL, COGEM_GEMINI_MODEL, COGEM_CLAUDE_MODEL\n"
+            "Env (when flags omitted): CLOGEM_CODEX_MODEL, CLOGEM_GEMINI_MODEL, CLOGEM_CLAUDE_MODEL\n"
             "Valid IDs depend on your codex/gemini CLI and account; see `codex exec --help` and `gemini --help`."
         ),
     )
@@ -318,7 +318,7 @@ async def async_main():
         metavar="MODEL_ID",
         default=None,
         help=(
-            "LLM for Claude SDK calls. Omit to use COGEM_CLAUDE_MODEL/COGEM_CLAUDE_SDK_MODEL "
+            "LLM for Claude SDK calls. Omit to use CLOGEM_CLAUDE_MODEL/CLOGEM_CLAUDE_SDK_MODEL "
             "or the built-in default."
         ),
     )
@@ -336,7 +336,7 @@ async def async_main():
         "--no-stitch",
         action="store_true",
         help=(
-            "Disable the Google Stitch stage for UI-heavy tasks (see COGEM_STITCH env)."
+            "Disable the Google Stitch stage for UI-heavy tasks (see CLOGEM_STITCH env)."
         ),
     )
     _ap.add_argument(
@@ -348,24 +348,24 @@ async def async_main():
         ),
     )
     _args = _ap.parse_args()
-    _codex_model = (_args.codex_model or os.environ.get("COGEM_CODEX_MODEL") or "").strip() or None
-    _gemini_model = (_args.gemini_model or os.environ.get("COGEM_GEMINI_MODEL") or "").strip() or None
-    _claude_model = (_args.claude_model or os.environ.get("COGEM_CLAUDE_MODEL") or "").strip() or None
+    _codex_model = (_args.codex_model or os.environ.get("CLOGEM_CODEX_MODEL") or "").strip() or None
+    _gemini_model = (_args.gemini_model or os.environ.get("CLOGEM_GEMINI_MODEL") or "").strip() or None
+    _claude_model = (_args.claude_model or os.environ.get("CLOGEM_CLAUDE_MODEL") or "").strip() or None
     role_provider_map = resolve_role_provider_map(
-        env_map_raw=os.environ.get("COGEM_ROLE_PROVIDER_MAP", ""),
+        env_map_raw=os.environ.get("CLOGEM_ROLE_PROVIDER_MAP", ""),
         cli_pairs=list(_args.role_provider or []),
     )
     stitch_feature_on = (not _args.no_stitch) and (
-        (os.environ.get("COGEM_STITCH") or "1").strip().lower()
+        (os.environ.get("CLOGEM_STITCH") or "1").strip().lower()
         not in ("0", "false", "no", "off", "disabled")
     )
 
     validation_docker_requested = bool(_args.validation_docker) or (
-        os.environ.get("COGEM_VALIDATION_DOCKER", "").strip().lower()
+        os.environ.get("CLOGEM_VALIDATION_DOCKER", "").strip().lower()
         in ("1", "true", "yes", "on")
     )
     require_docker_for_validation = (
-        os.environ.get("COGEM_STRICT_SANDBOX", "").strip().lower()
+        os.environ.get("CLOGEM_STRICT_SANDBOX", "").strip().lower()
         in ("1", "true", "yes", "on")
     )
 
@@ -391,7 +391,7 @@ async def async_main():
     session_tokens = {"codex": 0, "gemini": 0, "claude": 0}
     # None = not asked yet; True/False = user chose whether to pass Codex --full-auto and Gemini --yolo.
     auto_permissions: dict = {"granted": None}
-    # None = not asked yet; True/False = user chose whether cogem can execute local shell commands (/run, /test, /lint, /github/clone).
+    # None = not asked yet; True/False = user chose whether clogem can execute local shell commands (/run, /test, /lint, /github/clone).
     run_permissions: dict = {"granted": None}
     # Effective LLM IDs for this process (separate per backend); from CLI/env, change with /codex/model and /gemini/model.
     models: dict = {"codex": _codex_model, "gemini": _gemini_model, "claude": _claude_model}
@@ -401,7 +401,7 @@ async def async_main():
         if model_id:
             return f"{human}: {model_id}"
         return (
-            f"{human}: default (cogem does not pass -m; `{cli_hint}` CLI default model)"
+            f"{human}: default (clogem does not pass -m; `{cli_hint}` CLI default model)"
         )
 
     ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -425,8 +425,8 @@ async def async_main():
         return f"{head}\n...[memory summarized]...\n{tail}"
 
     def _prune_memory(mem: Dict[str, object]) -> Dict[str, object]:
-        max_items = max(3, int(os.environ.get("COGEM_MEMORY_MAX_ITEMS", "30")))
-        max_notes = max(400, int(os.environ.get("COGEM_MEMORY_MAX_NOTES_CHARS", "3000")))
+        max_items = max(3, int(os.environ.get("CLOGEM_MEMORY_MAX_ITEMS", "30")))
+        max_notes = max(400, int(os.environ.get("CLOGEM_MEMORY_MAX_NOTES_CHARS", "3000")))
 
         out = dict(DEFAULT_MEMORY)
         out.update(mem or {})
@@ -579,7 +579,7 @@ async def async_main():
                     roots.append(rp)
             except OSError:
                 continue
-        wd = os.environ.get("COGEM_CODEX_WORKDIR", "").strip()
+        wd = os.environ.get("CLOGEM_CODEX_WORKDIR", "").strip()
         if wd:
             try:
                 rp = os.path.realpath(wd)
@@ -635,7 +635,7 @@ async def async_main():
             return "[pdf extraction unavailable: install pypdf]"
 
         try:
-            max_pages = max(1, int(os.environ.get("COGEM_AT_MAX_PDF_PAGES", "30")))
+            max_pages = max(1, int(os.environ.get("CLOGEM_AT_MAX_PDF_PAGES", "30")))
         except ValueError:
             max_pages = 30
 
@@ -657,14 +657,14 @@ async def async_main():
                 text = f"[page {i + 1}: no extractable text]"
             block = f"\n\n--- PAGE {i + 1} ---\n{text}"
             if total + len(block) > max_chars:
-                out_parts.append("\n\n[pdf text truncated by COGEM_AT_MAX_FILE_BYTES]")
+                out_parts.append("\n\n[pdf text truncated by CLOGEM_AT_MAX_FILE_BYTES]")
                 break
             out_parts.append(block)
             total += len(block)
         if total_pages > show_pages:
             out_parts.append(
                 f"\n\n[pdf pages truncated: showing {show_pages}/{total_pages}; "
-                f"set COGEM_AT_MAX_PDF_PAGES to increase]"
+                f"set CLOGEM_AT_MAX_PDF_PAGES to increase]"
             )
         if not out_parts:
             return "[pdf contains no extractable text]"
@@ -684,7 +684,7 @@ async def async_main():
                 return "[binary file omitted]"
             return (
                 chunk.decode("utf-8", errors="replace")
-                + "\n\n[truncated: file exceeds COGEM_AT_MAX_FILE_BYTES]"
+                + "\n\n[truncated: file exceeds CLOGEM_AT_MAX_FILE_BYTES]"
             )
         if b"\x00" in raw:
             return "[binary file omitted]"
@@ -720,11 +720,11 @@ async def async_main():
             return raw, ""
         roots = _mention_roots_list()
         try:
-            max_b = max(4096, int(os.environ.get("COGEM_AT_MAX_FILE_BYTES", "400000")))
+            max_b = max(4096, int(os.environ.get("CLOGEM_AT_MAX_FILE_BYTES", "400000")))
         except ValueError:
             max_b = 400000
         try:
-            max_total = max(8000, int(os.environ.get("COGEM_AT_MAX_TOTAL_CHARS", "120000")))
+            max_total = max(8000, int(os.environ.get("CLOGEM_AT_MAX_TOTAL_CHARS", "120000")))
         except ValueError:
             max_total = 120000
 
@@ -745,7 +745,7 @@ async def async_main():
         chunks: List[str] = []
         total = 0
         symbol_index_enabled = (
-            os.environ.get("COGEM_SYMBOL_INDEX", "1").strip().lower()
+            os.environ.get("CLOGEM_SYMBOL_INDEX", "1").strip().lower()
             not in ("0", "false", "no", "off", "disabled")
         )
         symbol_index_cache = getattr(expand_at_mentions, "_symbol_index_cache", None)
@@ -760,7 +760,7 @@ async def async_main():
                 injected_symbol = False
                 if symbol_index_enabled:
                     try:
-                        from cogem.symbols import SymbolIndex
+                        from clogem.symbols import SymbolIndex
 
                         if symbol_index_cache is None:
                             symbol_index_cache = SymbolIndex(_repo_root())
@@ -793,7 +793,7 @@ async def async_main():
 
                 chunks.append(
                     f"### @{rel}\nNot found or not allowed (paths must stay under the project, "
-                    f"current working directory, or COGEM_CODEX_WORKDIR).\n\n"
+                    f"current working directory, or CLOGEM_CODEX_WORKDIR).\n\n"
                 )
                 total += len(chunks[-1])
                 continue
@@ -810,7 +810,7 @@ async def async_main():
             block = f"### {label}\n```\n{body}\n```\n\n"
             if total + len(block) > max_total:
                 chunks.append(
-                    f"[@ context truncated: total size exceeds COGEM_AT_MAX_TOTAL_CHARS={max_total}]\n"
+                    f"[@ context truncated: total size exceeds CLOGEM_AT_MAX_TOTAL_CHARS={max_total}]\n"
                 )
                 break
             total += len(block)
@@ -861,7 +861,7 @@ async def async_main():
         url = f"https://api.github.com/repos/{owner}/{repo}"
         req = urllib.request.Request(
             url,
-            headers={"Accept": "application/vnd.github+json", "User-Agent": "cogem-cli"},
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "clogem-cli"},
         )
         try:
             with urllib.request.urlopen(req, timeout=20) as resp:
@@ -958,7 +958,7 @@ async def async_main():
         session_tokens[provider] = session_tokens.get(provider, 0) + n
         console.print(
             Text(
-                f"[cogem] Tokens (~{provider} this call): {n}  "
+                f"[clogem] Tokens (~{provider} this call): {n}  "
                 f"(running total this turn ~{session_tokens[provider]})",
                 style=MUTED,
             )
@@ -971,7 +971,7 @@ async def async_main():
         if c == 0 and g == 0:
             console.print(
                 Text(
-                    "[cogem] Token usage: no counts found in CLI output this turn "
+                    "[clogem] Token usage: no counts found in CLI output this turn "
                     "(free-tier CLIs often omit usage; check provider dashboards if needed).",
                     style=MUTED,
                 )
@@ -979,14 +979,14 @@ async def async_main():
         else:
             console.print(
                 Text(
-                    f"[cogem] Token estimates this turn (parsed from CLI text): "
+                    f"[clogem] Token estimates this turn (parsed from CLI text): "
                     f"codex ~{c}, gemini ~{g}",
                     style=MUTED,
                 )
             )
 
     def _subprocess_timeout_sec() -> Optional[int]:
-        raw = os.environ.get("COGEM_SUBPROCESS_TIMEOUT_SEC", "").strip()
+        raw = os.environ.get("CLOGEM_SUBPROCESS_TIMEOUT_SEC", "").strip()
         if not raw:
             return None
         try:
@@ -1002,15 +1002,15 @@ async def async_main():
 
     def _say(msg: str) -> None:
         """Colored narration (Rich); readable in every terminal that supports ANSI."""
-        if msg.startswith("[cogem] START:"):
+        if msg.startswith("[clogem] START:"):
             console.print(Text(msg, style=LOG_START))
-        elif msg.startswith("[cogem] DONE:"):
+        elif msg.startswith("[clogem] DONE:"):
             console.print(Text(msg, style=LOG_DONE))
-        elif msg.startswith("[cogem] WARNING"):
+        elif msg.startswith("[clogem] WARNING"):
             console.print(Text(msg, style=LOG_WARN))
-        elif msg.startswith("[cogem] ERROR"):
+        elif msg.startswith("[clogem] ERROR"):
             console.print(Text(msg, style=LOG_ERR))
-        elif msg.startswith("[cogem]"):
+        elif msg.startswith("[clogem]"):
             console.print(Text(msg, style=TITLE))
         elif msg.startswith("  ") and (" > " in msg or " ok " in msg):
             console.print(Text(msg, style=LOG_TRACE))
@@ -1023,7 +1023,7 @@ async def async_main():
         preview = _task_preview(task, 88)
         mem_on = bool(mem_block and mem_block.strip())
         _say("")
-        _say("[cogem] Thinking (build)")
+        _say("[clogem] Thinking (build)")
         _say(f"  request: {preview}")
         _say(
             "  context: prior notes are included in Codex/Gemini prompts."
@@ -1036,7 +1036,7 @@ async def async_main():
     def live_reasoning_banner_chat(task: str) -> None:
         preview = _task_preview(task, 88)
         _say("")
-        _say("[cogem] Thinking (conversation)")
+        _say("[clogem] Thinking (conversation)")
         _say(f"  request: {preview}")
         _say("  next: showing routed reply below (no code pipeline).")
         _say("")
@@ -1064,7 +1064,7 @@ async def async_main():
     _SPINNER_RESET = "\033[0m"
     _TEAM_STATUS: Dict[str, str] = {}
     _TEAM_RENDER_LINES = {"count": 0}
-    _TEAM_KEY_VAR = contextvars.ContextVar("cogem_team_key", default="")
+    _TEAM_KEY_VAR = contextvars.ContextVar("clogem_team_key", default="")
 
     def _render_team_status_board() -> None:
         import sys as _sys
@@ -1093,7 +1093,7 @@ async def async_main():
         """
         import sys as _sys
 
-        _say(f"[cogem] START: {label}")
+        _say(f"[clogem] START: {label}")
         stop = threading.Event()
         t0 = time.monotonic()
         frames = "|/-\\"
@@ -1127,7 +1127,7 @@ async def async_main():
             _sys.stdout.write("\r" + (" " * 80) + "\r\n")
             _sys.stdout.flush()
         elapsed = time.monotonic() - t0
-        _say(f"[cogem] DONE:  {label}  ({elapsed:.1f}s)")
+        _say(f"[clogem] DONE:  {label}  ({elapsed:.1f}s)")
         return out
 
     async def _run_with_ascii_progress_async(label: str, coro_factory):
@@ -1194,8 +1194,8 @@ async def async_main():
                 return await asyncio.to_thread(subprocess.run, cmd, **kw)
             except subprocess.TimeoutExpired:
                 _say(
-                    f"[cogem] ERROR: subprocess timed out after {to}s "
-                    f"(set COGEM_SUBPROCESS_TIMEOUT_SEC or fix the CLI hang)."
+                    f"[clogem] ERROR: subprocess timed out after {to}s "
+                    f"(set CLOGEM_SUBPROCESS_TIMEOUT_SEC or fix the CLI hang)."
                 )
                 raise
 
@@ -1203,7 +1203,7 @@ async def async_main():
             result = await _run_with_ascii_progress_async(status_msg, _run_async)
             if result.returncode != 0:
                 _say(
-                    f"[cogem] WARNING: process exited with code {result.returncode}"
+                    f"[clogem] WARNING: process exited with code {result.returncode}"
                 )
                 err = (result.stderr or "").strip()
                 if err:
@@ -1214,7 +1214,7 @@ async def async_main():
         return result.stdout or "", result.stderr or "", result.returncode
 
     def _auto_permissions_from_env() -> Optional[bool]:
-        raw = os.environ.get("COGEM_AUTO_PERMISSIONS", "").strip().lower()
+        raw = os.environ.get("CLOGEM_AUTO_PERMISSIONS", "").strip().lower()
         if raw in ("1", "y", "yes", "true", "on"):
             return True
         if raw in ("0", "n", "no", "false", "off"):
@@ -1224,7 +1224,7 @@ async def async_main():
     def ensure_auto_permissions() -> None:
         """
         Codex/Gemini often block in headless mode until approvals are granted.
-        Ask once per session (or use COGEM_AUTO_PERMISSIONS=yes|no).
+        Ask once per session (or use CLOGEM_AUTO_PERMISSIONS=yes|no).
         """
         if auto_permissions["granted"] is not None:
             return
@@ -1236,8 +1236,8 @@ async def async_main():
             auto_permissions["granted"] = False
             console.print(
                 Text(
-                    "[cogem] Non-interactive stdin: not prompting for Codex/Gemini permissions. "
-                    "Set COGEM_AUTO_PERMISSIONS=yes if builds hang or fail.",
+                    "[clogem] Non-interactive stdin: not prompting for Codex/Gemini permissions. "
+                    "Set CLOGEM_AUTO_PERMISSIONS=yes if builds hang or fail.",
                     style=LOG_WARN,
                 )
             )
@@ -1253,25 +1253,25 @@ async def async_main():
         )
         console.print(
             Text(
-                "Tip: set COGEM_AUTO_PERMISSIONS=yes or no to skip this prompt.",
+                "Tip: set CLOGEM_AUTO_PERMISSIONS=yes or no to skip this prompt.",
                 style=MUTED,
             )
         )
         ans = console.input(
-            Text("Allow both for this cogem session? [y/N]: ", style=TITLE)
+            Text("Allow both for this clogem session? [y/N]: ", style=TITLE)
         ).strip().lower()
         auto_permissions["granted"] = ans in ("y", "yes")
         if not auto_permissions["granted"]:
             console.print(
                 Text(
                     "Continuing without --full-auto / --yolo. If subprocesses hang or exit with "
-                    "approval errors, re-run with COGEM_AUTO_PERMISSIONS=yes.",
+                    "approval errors, re-run with CLOGEM_AUTO_PERMISSIONS=yes.",
                     style=LOG_WARN,
                 )
             )
 
     def _run_permissions_from_env() -> Optional[bool]:
-        raw = os.environ.get("COGEM_ALLOW_LOCAL_COMMANDS", "").strip().lower()
+        raw = os.environ.get("CLOGEM_ALLOW_LOCAL_COMMANDS", "").strip().lower()
         if raw in ("1", "y", "yes", "true", "on"):
             return True
         if raw in ("0", "n", "no", "false", "off"):
@@ -1292,8 +1292,8 @@ async def async_main():
             run_permissions["granted"] = False
             console.print(
                 Text(
-                    "[cogem] Non-interactive stdin: not prompting to run local commands. "
-                    "Set COGEM_ALLOW_LOCAL_COMMANDS=yes to enable.",
+                    "[clogem] Non-interactive stdin: not prompting to run local commands. "
+                    "Set CLOGEM_ALLOW_LOCAL_COMMANDS=yes to enable.",
                     style=LOG_WARN,
                 )
             )
@@ -1302,7 +1302,7 @@ async def async_main():
         console.print(
             Text(
                 "Local tools (/run, /test, /lint, /github/clone) and build-time artifact auto-run "
-                "may execute commands on your machine. Allow that for this cogem session?",
+                "may execute commands on your machine. Allow that for this clogem session?",
                 style=MUTED,
             )
         )
@@ -1483,7 +1483,7 @@ async def async_main():
         if kind not in ("node-npm", "node-pnpm", "node-yarn"):
             if kind in ("python", "python-poetry", "python-pdm"):
                 typecheck_pyright_on = (
-                    os.environ.get("COGEM_TYPECHECK_PYRIGHT", "1").strip().lower()
+                    os.environ.get("CLOGEM_TYPECHECK_PYRIGHT", "1").strip().lower()
                     not in ("0", "false", "no", "off", "disabled")
                 )
                 if not typecheck_pyright_on:
@@ -1544,15 +1544,15 @@ async def async_main():
         import tempfile
 
         src = _repo_root()
-        sandbox_root = tempfile.mkdtemp(prefix="cogem-validate-")
+        sandbox_root = tempfile.mkdtemp(prefix="clogem-validate-")
         include_node_modules = (
-            os.environ.get("COGEM_SANDBOX_INCLUDE_NODE_MODULES", "").strip().lower()
+            os.environ.get("CLOGEM_SANDBOX_INCLUDE_NODE_MODULES", "").strip().lower()
             in ("1", "true", "yes", "on")
         )
 
         # Fast path: copy only git-tracked files (near-instant for large repos).
         try:
-            from cogem.validation import copy_git_tracked_repo_to_sandbox
+            from clogem.validation import copy_git_tracked_repo_to_sandbox
 
             used_git, _copied = copy_git_tracked_repo_to_sandbox(
                 src,
@@ -1659,11 +1659,11 @@ async def async_main():
         Best-effort dependency install inside container so tests/lint can run.
         Returns a short feedback string (empty if nothing to do).
         """
-        from cogem.docker_validation import plan_docker_dependency_install
+        from clogem.docker_validation import plan_docker_dependency_install
 
-        py_image = os.environ.get("COGEM_DOCKER_PY_IMAGE", "python:3.12-slim").strip()
+        py_image = os.environ.get("CLOGEM_DOCKER_PY_IMAGE", "python:3.12-slim").strip()
         node_image = (
-            os.environ.get("COGEM_DOCKER_NODE_IMAGE", "node:20-slim").strip()
+            os.environ.get("CLOGEM_DOCKER_NODE_IMAGE", "node:20-slim").strip()
         )
 
         signals = {
@@ -1721,16 +1721,16 @@ async def async_main():
             combined_parts: List[str] = []
             ok = True
 
-            from cogem.docker_validation import normalize_repo_kind_for_docker
+            from clogem.docker_validation import normalize_repo_kind_for_docker
 
             docker_family = normalize_repo_kind_for_docker(repo_kind)
             if docker_family == "node":
                 image = (
-                    os.environ.get("COGEM_DOCKER_NODE_IMAGE", "node:20-slim").strip()
+                    os.environ.get("CLOGEM_DOCKER_NODE_IMAGE", "node:20-slim").strip()
                 )
             else:
                 image = (
-                    os.environ.get("COGEM_DOCKER_PY_IMAGE", "python:3.12-slim").strip()
+                    os.environ.get("CLOGEM_DOCKER_PY_IMAGE", "python:3.12-slim").strip()
                 )
 
             dep_feedback = _docker_install_deps_if_needed(repo_kind, sandbox_root)
@@ -1797,7 +1797,7 @@ async def async_main():
                 trace_done(
                     "Validation: strict sandbox requested but Docker is unavailable; skipping validation."
                 )
-                return True, "Validation skipped: Docker required (COGEM_STRICT_SANDBOX=1) but not available."
+                return True, "Validation skipped: Docker required (CLOGEM_STRICT_SANDBOX=1) but not available."
             trace_done("Validation: using Docker backend (strict).")
             return _run_validation_suite_docker()
 
@@ -1843,11 +1843,11 @@ async def async_main():
 
     def _codex_argv(prompt: str) -> List[str]:
         """codex exec with flags that avoid failing outside a git repo / trusted tree."""
-        base = _shlex_split_cmd(os.environ.get("COGEM_CODEX_CMD", "").strip()) or ["codex"]
+        base = _shlex_split_cmd(os.environ.get("CLOGEM_CODEX_CMD", "").strip()) or ["codex"]
         argv = base + ["exec", "--skip-git-repo-check"]
         if auto_permissions.get("granted"):
             argv.append("--full-auto")
-        wd = os.environ.get("COGEM_CODEX_WORKDIR", "").strip()
+        wd = os.environ.get("CLOGEM_CODEX_WORKDIR", "").strip()
         if wd:
             argv.extend(["-C", os.path.abspath(wd)])
         cm = models.get("codex")
@@ -1857,7 +1857,7 @@ async def async_main():
         return argv
 
     def _gemini_argv(prompt: str) -> List[str]:
-        base = _shlex_split_cmd(os.environ.get("COGEM_GEMINI_CMD", "").strip()) or ["gemini"]
+        base = _shlex_split_cmd(os.environ.get("CLOGEM_GEMINI_CMD", "").strip()) or ["gemini"]
         argv = list(base)
         if auto_permissions.get("granted"):
             argv.append("--yolo")
@@ -1879,22 +1879,22 @@ async def async_main():
             return subprocess.run(args, **kw)
         except subprocess.TimeoutExpired:
             _say(
-                f"[cogem] ERROR: subprocess timed out after {to}s "
-                f"(set COGEM_SUBPROCESS_TIMEOUT_SEC)."
+                f"[clogem] ERROR: subprocess timed out after {to}s "
+                f"(set CLOGEM_SUBPROCESS_TIMEOUT_SEC)."
             )
             raise
 
     async def run_codex(prompt: str, status_msg: str) -> Tuple[str, str, int]:
-        backend = (os.environ.get("COGEM_CODEX_BACKEND", "auto").strip().lower() or "auto")
+        backend = (os.environ.get("CLOGEM_CODEX_BACKEND", "auto").strip().lower() or "auto")
         sdk_model = (
             models.get("codex")
-            or os.environ.get("COGEM_CODEX_SDK_MODEL", "").strip()
+            or os.environ.get("CLOGEM_CODEX_SDK_MODEL", "").strip()
             or "gpt-4.1-mini"
         )
         timeout = _subprocess_timeout_sec() or 60
 
         use_async = (
-            os.environ.get("COGEM_ASYNC_LLM", "1").strip().lower()
+            os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
             not in ("0", "false", "no", "off", "disabled")
         )
 
@@ -1934,16 +1934,16 @@ async def async_main():
         return stdout or "", stderr or "", rc
 
     async def run_gemini(prompt: str, status_msg: str) -> Tuple[str, str, int]:
-        backend = (os.environ.get("COGEM_GEMINI_BACKEND", "auto").strip().lower() or "auto")
+        backend = (os.environ.get("CLOGEM_GEMINI_BACKEND", "auto").strip().lower() or "auto")
         sdk_model = (
             models.get("gemini")
-            or os.environ.get("COGEM_GEMINI_SDK_MODEL", "").strip()
+            or os.environ.get("CLOGEM_GEMINI_SDK_MODEL", "").strip()
             or "gemini-2.5-flash"
         )
         timeout = _subprocess_timeout_sec() or 60
 
         use_async = (
-            os.environ.get("COGEM_ASYNC_LLM", "1").strip().lower()
+            os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
             not in ("0", "false", "no", "off", "disabled")
         )
 
@@ -1983,15 +1983,15 @@ async def async_main():
         return (stdout or "").strip(), stderr or "", rc
 
     async def run_claude(prompt: str, status_msg: str) -> Tuple[str, str, int]:
-        backend = (os.environ.get("COGEM_CLAUDE_BACKEND", "sdk").strip().lower() or "sdk")
+        backend = (os.environ.get("CLOGEM_CLAUDE_BACKEND", "sdk").strip().lower() or "sdk")
         sdk_model = (
             models.get("claude")
-            or os.environ.get("COGEM_CLAUDE_SDK_MODEL", "").strip()
+            or os.environ.get("CLOGEM_CLAUDE_SDK_MODEL", "").strip()
             or "claude-sonnet-4-6"
         )
         timeout = _subprocess_timeout_sec() or 60
         use_async = (
-            os.environ.get("COGEM_ASYNC_LLM", "1").strip().lower()
+            os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
             not in ("0", "false", "no", "off", "disabled")
         )
 
@@ -2036,7 +2036,7 @@ async def async_main():
         match = re.search(r"```(?:\w+)?\n([\s\S]*?)```", text)
         return match.group(1).strip() if match else text
 
-    ROUTER_TEMPLATE = """You route input for Cogem, a CLI that runs a Codex+Gemini coding workflow.
+    ROUTER_TEMPLATE = """You route input for Clogem, a CLI that runs a Codex+Gemini coding workflow.
 
 Saved project context (memory.json)—use it when mode is CHAT so answers stay consistent (name, stack, notes, etc.):
 ---
@@ -2114,7 +2114,7 @@ __TASK__
         ),
     }
 
-    ASK_MODE_PROMPT = """You are Cogem's conversational assistant (no full code pipeline this turn).
+    ASK_MODE_PROMPT = """You are Clogem's conversational assistant (no full code pipeline this turn).
 
 Saved context:
 ---
@@ -2152,7 +2152,7 @@ __TASK__
 ---
 """
 
-    GEMINI_REVIEW_PROMPT = """You are Gemini acting as a strict multi-persona reviewer for Cogem.
+    GEMINI_REVIEW_PROMPT = """You are Gemini acting as a strict multi-persona reviewer for Clogem.
 
 Run a structured audit in exactly these roles:
 1) Security Lead
@@ -2200,7 +2200,7 @@ __CODE__
 ---
 """
 
-    ARCHITECT_SUBTASK_PROMPT = """You are the Architect for Cogem Parallel Agent Teams.
+    ARCHITECT_SUBTASK_PROMPT = """You are the Architect for Clogem Parallel Agent Teams.
 Analyze the task and decide if it should be split into parallel sub-tasks.
 
 Return ONLY JSON:
@@ -2249,19 +2249,19 @@ __OUTPUTS__
 
     async def classify_intent_secondary(task_text: str, _mem_block: str) -> Optional[str]:
         enabled = (
-            os.environ.get("COGEM_SECONDARY_INTENT_LLM", "1").strip().lower()
+            os.environ.get("CLOGEM_SECONDARY_INTENT_LLM", "1").strip().lower()
             not in ("0", "false", "no", "off", "disabled")
         )
         if not enabled:
             return None
         model = (
-            os.environ.get("COGEM_ROUTER_CLASSIFIER_MODEL", "").strip()
+            os.environ.get("CLOGEM_ROUTER_CLASSIFIER_MODEL", "").strip()
             or "gemini-2.5-flash-lite"
         )
         timeout = _subprocess_timeout_sec() or 30
         prompt = ROUTER_SECONDARY_INTENT_PROMPT.replace("__TASK__", task_text or "")
         use_async = (
-            os.environ.get("COGEM_ASYNC_LLM", "1").strip().lower()
+            os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
             not in ("0", "false", "no", "off", "disabled")
         )
         if use_async:
@@ -2379,19 +2379,19 @@ Return project edits as:
 
     async def run_visual_ui_review(task_text: str) -> Optional[str]:
         enabled = (
-            os.environ.get("COGEM_VISUAL_REVIEW", "1").strip().lower()
+            os.environ.get("CLOGEM_VISUAL_REVIEW", "1").strip().lower()
             not in ("0", "false", "no", "off", "disabled")
         )
         if not enabled:
             return None
-        screenshot_path = os.path.join(ROOT, ".cogem_visual_review.png")
+        screenshot_path = os.path.join(ROOT, ".clogem_visual_review.png")
         ok, err = capture_frontend_screenshot(_repo_root(), screenshot_path)
         if not ok:
             trace_done(f"Visual review skipped: {err}")
             return None
         model = (
             models.get("gemini")
-            or os.environ.get("COGEM_VISUAL_REVIEW_MODEL", "").strip()
+            or os.environ.get("CLOGEM_VISUAL_REVIEW_MODEL", "").strip()
             or "gemini-2.5-pro"
         )
         timeout = _subprocess_timeout_sec() or 60
@@ -2403,7 +2403,7 @@ Return project edits as:
             f"\n\nTask intent:\n{task_text}"
         )
         use_async = (
-            os.environ.get("COGEM_ASYNC_LLM", "1").strip().lower()
+            os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
             not in ("0", "false", "no", "off", "disabled")
         )
         if use_async:
@@ -2429,30 +2429,30 @@ Return project edits as:
         Help the router/chat model answer correctly about Stitch availability.
         Kept lightweight and derived from env vars + basic executables checks.
         """
-        cli_cmd = (os.environ.get("COGEM_STITCH_CLI") or "").strip()
-        http_url = (os.environ.get("COGEM_STITCH_HTTP_URL") or "").strip()
-        mcp_raw = (os.environ.get("COGEM_STITCH_MCP") or "").strip().lower()
+        cli_cmd = (os.environ.get("CLOGEM_STITCH_CLI") or "").strip()
+        http_url = (os.environ.get("CLOGEM_STITCH_HTTP_URL") or "").strip()
+        mcp_raw = (os.environ.get("CLOGEM_STITCH_MCP") or "").strip().lower()
 
         # Prefer calling the existing helper if available, but keep this robust.
         try:
-            from cogem.stitch.mcp_stdio import stitch_mcp_enabled
+            from clogem.stitch.mcp_stdio import stitch_mcp_enabled
 
             mcp_enabled = stitch_mcp_enabled()
         except Exception:
             mcp_enabled = mcp_raw not in ("0", "false", "no", "off", "disabled", "")
 
         cli_line = (
-            f"enabled (COGEM_STITCH_CLI={cli_cmd})"
+            f"enabled (CLOGEM_STITCH_CLI={cli_cmd})"
             if cli_cmd
-            else "not configured (COGEM_STITCH_CLI is unset)"
+            else "not configured (CLOGEM_STITCH_CLI is unset)"
         )
         mcp_line = (
-            f"enabled (COGEM_STITCH_MCP={mcp_raw or 'default-on'})"
+            f"enabled (CLOGEM_STITCH_MCP={mcp_raw or 'default-on'})"
             if mcp_enabled
-            else "disabled (COGEM_STITCH_MCP=0)"
+            else "disabled (CLOGEM_STITCH_MCP=0)"
         )
         http_line = (
-            "enabled (COGEM_STITCH_HTTP_URL is set)" if http_url else "not configured"
+            "enabled (CLOGEM_STITCH_HTTP_URL is set)" if http_url else "not configured"
         )
 
         return (
@@ -2463,12 +2463,12 @@ Return project edits as:
             "- Stitch manual fallback: always available (export/paste)\n"
         )
 
-    def runtime_cogem_commands_capabilities_block() -> str:
+    def runtime_clogem_commands_capabilities_block() -> str:
         """
         Helps chat/router explain what features exist and how to access them,
         without guessing extra tools.
         """
-        allow_local = os.environ.get("COGEM_ALLOW_LOCAL_COMMANDS", "").strip()
+        allow_local = os.environ.get("CLOGEM_ALLOW_LOCAL_COMMANDS", "").strip()
         allow_local_hint = (
             "auto-granted"
             if allow_local
@@ -2503,7 +2503,7 @@ Return project edits as:
         ("/debug", "Debugging & root-cause focus for this turn"),
         ("/agent", "Autonomous multi-step coding within your scope"),
         ("/ask", "Chat only — no Codex/Gemini build loop this turn"),
-        ("/exit", "Exit cogem"),
+        ("/exit", "Exit clogem"),
         ("/pdf", "Generate a PDF from provided text (plain text layout)"),
         ("/codex/model", "Show or set Codex LLM (draft + improve)"),
         ("/gemini/model", "Show or set Gemini LLM (review + summary)"),
@@ -2615,7 +2615,7 @@ Return project edits as:
 
                 # Fuzzy fallback only when prefix matching produces nothing.
                 fuzzy_enabled = (
-                    os.environ.get("COGEM_FUZZY_AT_COMPLETIONS", "1").strip().lower()
+                    os.environ.get("CLOGEM_FUZZY_AT_COMPLETIONS", "1").strip().lower()
                     not in ("0", "false", "no", "off", "disabled")
                 )
                 if fuzzy_enabled:
@@ -2688,11 +2688,11 @@ Return project edits as:
         repo_root_for_symbols = _repo_root()
         symbol_index_box = {"idx": None}
         symbols_completion_enabled = (
-            os.environ.get("COGEM_SYMBOL_COMPLETIONS", "1").strip().lower()
+            os.environ.get("CLOGEM_SYMBOL_COMPLETIONS", "1").strip().lower()
             not in ("0", "false", "no", "off", "disabled")
         )
 
-        class CogemCompleter(Completer):
+        class ClogemCompleter(Completer):
             def get_completions(self, document, complete_event):
                 from prompt_toolkit.completion import Completion
 
@@ -2732,7 +2732,7 @@ Return project edits as:
                         and not partial.startswith(".")
                     ):
                         try:
-                            from cogem.symbols import SymbolIndex
+                            from clogem.symbols import SymbolIndex
 
                             if symbol_index_box["idx"] is None:
                                 symbol_index_box["idx"] = SymbolIndex(
@@ -2744,7 +2744,7 @@ Return project edits as:
                                 partial, limit=_MAX_AT_COMPLETIONS
                             )
                             fuzzy_symbols = (
-                                os.environ.get("COGEM_FUZZY_SYMBOL_COMPLETIONS", "1")
+                                os.environ.get("CLOGEM_FUZZY_SYMBOL_COMPLETIONS", "1")
                                 .strip()
                                 .lower()
                                 not in ("0", "false", "no", "off", "disabled")
@@ -2826,7 +2826,7 @@ Return project edits as:
 
         _cd = None
         if ColorDepth is not None and (
-            os.environ.get("COGEM_NO_TRUE_COLOR", "").strip().lower()
+            os.environ.get("CLOGEM_NO_TRUE_COLOR", "").strip().lower()
             not in ("1", "true", "yes")
         ):
             _cd = ColorDepth.TRUE_COLOR
@@ -2866,7 +2866,7 @@ Return project edits as:
                 pass
 
         task_prompt_session = PromptSession(
-            completer=CogemCompleter(),
+            completer=ClogemCompleter(),
             history=InMemoryHistory(),
             multiline=True,
             complete_while_typing=True,
@@ -2921,7 +2921,7 @@ Return project edits as:
             save_memory(mem)
         return changed
 
-    MEMORY_EXTRACT_SESSION = """You update long-lived session memory for Cogem after a coding run finished.
+    MEMORY_EXTRACT_SESSION = """You update long-lived session memory for Clogem after a coding run finished.
 
 User task:
 ---
@@ -2943,7 +2943,7 @@ or a single line: NONE
 Persist only durable facts that should influence future sessions. If nothing is worth saving, output exactly NONE.
 No markdown, no other text."""
 
-    MEMORY_EXTRACT_PROJECT = """You update long-lived session memory for Cogem after multi-file output was written.
+    MEMORY_EXTRACT_PROJECT = """You update long-lived session memory for Clogem after multi-file output was written.
 
 User task:
 ---
@@ -2979,7 +2979,7 @@ No markdown, no other text."""
             MEMORY_EXTRACT_SESSION.replace("__TASK__", t).replace("__SUMMARY__", s)
         )
         _say(
-            "[cogem] Saving session memory (extra Codex call) — "
+            "[clogem] Saving session memory (extra Codex call) — "
             "you will see START/DONE lines below; this is not stuck."
         )
         out, _err, rc = await run_role(
@@ -2990,20 +2990,20 @@ No markdown, no other text."""
         if rc != 0:
             console.print(
                 Text(
-                    f"[cogem] Session memory update skipped (Codex exit {rc}).",
+                    f"[clogem] Session memory update skipped (Codex exit {rc}).",
                     style=LOG_WARN,
                 )
             )
         else:
             auto_memory_from_text(mem, out)
-        _say("[cogem] Session memory step finished.")
+        _say("[clogem] Session memory step finished.")
 
     async def auto_memory_after_project_session(mem, task: str, file_names: str) -> None:
         t = task.replace("__", "")[:6000]
         f = file_names.replace("__", "")[:4000]
         prompt = MEMORY_EXTRACT_PROJECT.replace("__TASK__", t).replace("__FILES__", f)
         _say(
-            "[cogem] Saving session memory (extra Codex call) — "
+            "[clogem] Saving session memory (extra Codex call) — "
             "wait for DONE before the next prompt."
         )
         out, _err, rc = await run_role(
@@ -3014,13 +3014,13 @@ No markdown, no other text."""
         if rc != 0:
             console.print(
                 Text(
-                    f"[cogem] Session memory update skipped (Codex exit {rc}).",
+                    f"[clogem] Session memory update skipped (Codex exit {rc}).",
                     style=LOG_WARN,
                 )
             )
         else:
             auto_memory_from_text(mem, out)
-        _say("[cogem] Session memory step finished.")
+        _say("[clogem] Session memory step finished.")
 
     def extract_files(text):
         pattern = r"FILE:\s*(.*?)\n([\s\S]*?)(?=FILE:|$)"
@@ -3048,11 +3048,11 @@ No markdown, no other text."""
         plan = plan_safe_writes(repo_root=repo_root, file_map=files)
 
         dry_run = (
-            os.environ.get("COGEM_WRITE_DRY_RUN", "").strip().lower()
+            os.environ.get("CLOGEM_WRITE_DRY_RUN", "").strip().lower()
             in ("1", "true", "yes", "on")
         )
         approval_required = (
-            os.environ.get("COGEM_WRITE_APPROVAL", "").strip().lower()
+            os.environ.get("CLOGEM_WRITE_APPROVAL", "").strip().lower()
             in ("1", "true", "yes", "on")
         )
 
@@ -3061,7 +3061,7 @@ No markdown, no other text."""
         for b in blocked:
             console.print(
                 Text(
-                    f"[cogem] Blocked model write '{b.original_name}': {b.reason}",
+                    f"[clogem] Blocked model write '{b.original_name}': {b.reason}",
                     style=LOG_WARN,
                 )
             )
@@ -3077,14 +3077,14 @@ No markdown, no other text."""
             for pth in sorted(diff_written.keys()):
                 _say(f"  [ok] patched {pth}")
             for err in diff_errors:
-                console.print(Text(f"[cogem] Patch warning: {err}", style=LOG_WARN))
+                console.print(Text(f"[clogem] Patch warning: {err}", style=LOG_WARN))
             written.update(diff_written)
 
         if not allowed:
             return written
 
         if dry_run:
-            console.print(Text("[cogem] Dry-run mode: no files were written.", style=LOG_WARN))
+            console.print(Text("[clogem] Dry-run mode: no files were written.", style=LOG_WARN))
             for p in allowed:
                 try:
                     rel = os.path.relpath(p.target_path, repo_root)
@@ -3097,7 +3097,7 @@ No markdown, no other text."""
             if not sys.stdin.isatty():
                 console.print(
                     Text(
-                        "[cogem] Non-interactive session + COGEM_WRITE_APPROVAL=1: skipping writes.",
+                        "[clogem] Non-interactive session + CLOGEM_WRITE_APPROVAL=1: skipping writes.",
                         style=LOG_WARN,
                     )
                 )
@@ -3115,7 +3115,7 @@ No markdown, no other text."""
                 console.print(Text(f" ... and {len(allowed) - 30} more", style=MUTED))
             ans = console.input(Text("Proceed with writes? [y/N]: ", style=TITLE)).strip().lower()
             if ans not in ("y", "yes"):
-                console.print(Text("[cogem] Write approval denied; skipping writes.", style=LOG_WARN))
+                console.print(Text("[clogem] Write approval denied; skipping writes.", style=LOG_WARN))
                 return written
         for p in allowed:
             content = files.get(p.original_name, "")
@@ -3150,7 +3150,7 @@ No markdown, no other text."""
         if not run_permissions.get("granted"):
             console.print(
                 Text(
-                    "[cogem] Skipping auto-run of generated artifacts (local command execution denied).",
+                    "[clogem] Skipping auto-run of generated artifacts (local command execution denied).",
                     style=LOG_WARN,
                 )
             )
@@ -3257,7 +3257,7 @@ No markdown, no other text."""
             if first_turn:
                 console.print(Rule(style=BORDER))
                 header = Text()
-                header.append("cogem", style=TITLE)
+                header.append("clogem", style=TITLE)
                 header.append("  ", style="")
                 header.append("dual-agent loop", style=SUBTITLE)
                 console.print(header)
@@ -3392,14 +3392,14 @@ No markdown, no other text."""
                     .replace(
                         "__CAPS__",
                         runtime_stitch_capabilities_block()
-                        + runtime_cogem_commands_capabilities_block(),
+                        + runtime_clogem_commands_capabilities_block(),
                     )
                     .replace("__TASK__", ask_task_body),
                     "Orchestrator: /ask reply...",
                 )
                 if ask_rc != 0:
                     console.print()
-                    _say(f"[cogem] ERROR: Codex exited with code {ask_rc} for /ask.")
+                    _say(f"[clogem] ERROR: Codex exited with code {ask_rc} for /ask.")
                     if (ask_err or "").strip():
                         console.print(
                             Text((ask_err or "").strip()[:800], style=LOG_ERR)
@@ -3417,7 +3417,7 @@ No markdown, no other text."""
                 console.print(chat_reply or "(empty reply)")
                 console.print()
                 _token_turn_footer()
-                _say("[cogem] Turn finished. What would you like to do next?")
+                _say("[clogem] Turn finished. What would you like to do next?")
                 continue
 
             if not (task or "").strip() and not attach_block:
@@ -3445,7 +3445,7 @@ No markdown, no other text."""
                 build_router_prompt=build_router_prompt,
                 run_codex=lambda prompt, status: run_role("orchestrator", prompt, status),
                 runtime_stitch_capabilities_block=runtime_stitch_capabilities_block,
-                runtime_cogem_commands_capabilities_block=runtime_cogem_commands_capabilities_block,
+                runtime_clogem_commands_capabilities_block=runtime_clogem_commands_capabilities_block,
                 router_hint=router_hint,
                 trace_doing=trace_doing,
                 trace_done=trace_done,
@@ -3487,7 +3487,7 @@ No markdown, no other text."""
                 console.print(chat_reply or "(empty reply)")
                 console.print()
                 _token_turn_footer()
-                _say("[cogem] Turn finished. What would you like to do next?")
+                _say("[clogem] Turn finished. What would you like to do next?")
                 continue
 
             trace_done(
@@ -3543,11 +3543,11 @@ No markdown, no other text."""
                     "Image @ mentions detected in /build; generating Gemini visual spec for Codex."
                 )
                 model_vs = (
-                    os.environ.get("COGEM_IMAGE_SPEC_MODEL", "").strip()
+                    os.environ.get("CLOGEM_IMAGE_SPEC_MODEL", "").strip()
                     or "gemini-2.5-flash"
                 )
                 use_async_vs = (
-                    os.environ.get("COGEM_ASYNC_LLM", "1").strip().lower()
+                    os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
                     not in ("0", "false", "no", "off", "disabled")
                 )
                 vs_parts: List[str] = []
@@ -3597,7 +3597,7 @@ No markdown, no other text."""
             if mode == "workflow":
                 try:
                     arch_prompt = ARCHITECT_SUBTASK_PROMPT.replace("__TASK__", task_clean or "")
-                    arch_model = os.environ.get("COGEM_ARCHITECT_MODEL", "").strip() or "gemini-2.5-pro"
+                    arch_model = os.environ.get("CLOGEM_ARCHITECT_MODEL", "").strip() or "gemini-2.5-pro"
                     arch_res = await gemini_generate_async(
                         arch_prompt,
                         arch_model,
@@ -3629,7 +3629,7 @@ No markdown, no other text."""
                     _TEAM_STATUS[st.id] = st.status
                 _render_team_status_board()
                 joined = "\n\n".join(team_outputs).strip()
-                integ_model = os.environ.get("COGEM_INTEGRATOR_MODEL", "").strip() or "gemini-2.5-pro"
+                integ_model = os.environ.get("CLOGEM_INTEGRATOR_MODEL", "").strip() or "gemini-2.5-pro"
                 integ_prompt = INTEGRATION_REVIEW_PROMPT.replace("__OUTPUTS__", joined[:50000])
                 integ_res = await gemini_generate_async(
                     integ_prompt,
@@ -3690,7 +3690,7 @@ No markdown, no other text."""
                         "Codex draft failed; no diff/FILE output to continue with."
                     )
                     console.print()
-                    _say(f"[cogem] ERROR: Codex draft exited with code {draft_rc}.")
+                    _say(f"[clogem] ERROR: Codex draft exited with code {draft_rc}.")
                     if (draft_err or "").strip():
                         clip = (draft_err or "").strip()[:1200]
                         if len((draft_err or "").strip()) > 1200:
@@ -3698,7 +3698,7 @@ No markdown, no other text."""
                         console.print(Text(clip, style=LOG_ERR))
                     console.print(
                         Text(
-                            "Set COGEM_CODEX_WORKDIR to your project folder if Codex should write elsewhere.",
+                            "Set CLOGEM_CODEX_WORKDIR to your project folder if Codex should write elsewhere.",
                             style=MUTED,
                         )
                     )
@@ -3726,7 +3726,7 @@ No markdown, no other text."""
                 else:
                     console.print(
                         Text(
-                            "[cogem] No files written (all blocked, dry-run, or approval denied).",
+                            "[clogem] No files written (all blocked, dry-run, or approval denied).",
                             style=LOG_WARN,
                         )
                     )
@@ -3737,7 +3737,7 @@ No markdown, no other text."""
                     max_attempts = 2
                     try:
                         max_attempts = max(
-                            1, int(os.environ.get("COGEM_VALIDATION_MAX_ATTEMPTS", "2"))
+                            1, int(os.environ.get("CLOGEM_VALIDATION_MAX_ATTEMPTS", "2"))
                         )
                     except ValueError:
                         max_attempts = 2
@@ -3747,7 +3747,7 @@ No markdown, no other text."""
                     while attempt <= max_attempts and not validated:
                         console.print(
                             Text(
-                                f"[cogem] Validation attempt {attempt}/{max_attempts} (tests + lint + typecheck) ...",
+                                f"[clogem] Validation attempt {attempt}/{max_attempts} (tests + lint + typecheck) ...",
                                 style=MUTED,
                             )
                         )
@@ -3790,7 +3790,7 @@ Return project edits as:
                         if imp_rc != 0:
                             console.print(
                                 Text(
-                                    f"[cogem] WARNING: Codex validation-fix exited with code {imp_rc}.",
+                                    f"[clogem] WARNING: Codex validation-fix exited with code {imp_rc}.",
                                     style=LOG_WARN,
                                 )
                             )
@@ -3800,7 +3800,7 @@ Return project edits as:
                         if not improved_files and not improved_diff:
                             console.print(
                                 Text(
-                                    "[cogem] WARNING: No FILE: blocks or diff patches returned from Codex fix pass.",
+                                    "[clogem] WARNING: No FILE: blocks or diff patches returned from Codex fix pass.",
                                     style=LOG_WARN,
                                 )
                             )
@@ -3817,7 +3817,7 @@ Return project edits as:
                         else:
                             console.print(
                                 Text(
-                                    "[cogem] No files written from validation-fix pass.",
+                                    "[clogem] No files written from validation-fix pass.",
                                     style=LOG_WARN,
                                 )
                             )
@@ -3881,7 +3881,7 @@ Return project edits as:
                     memory, task, ", ".join(sorted(files.keys()))
                 )
                 _token_turn_footer()
-                _say("[cogem] Turn finished. What would you like to do next?")
+                _say("[clogem] Turn finished. What would you like to do next?")
                 continue
 
             code = extract_code(raw)
@@ -3905,14 +3905,14 @@ Return project edits as:
             )
             git_ctx_block = ""
             try:
-                if os.environ.get("COGEM_GIT_CONTEXT", "1").strip().lower() not in (
+                if os.environ.get("CLOGEM_GIT_CONTEXT", "1").strip().lower() not in (
                     "0",
                     "false",
                     "no",
                     "off",
                     "disabled",
                 ):
-                    from cogem.git_context import build_recent_git_log_context
+                    from clogem.git_context import build_recent_git_log_context
 
                     abs_files: List[str] = []
                     for m in _AT_MENTION.finditer(task or ""):
@@ -3947,7 +3947,7 @@ Return project edits as:
             if gem_rev_rc != 0:
                 trace_done("Gemini review failed; stopping this build turn.")
                 console.print()
-                _say(f"[cogem] ERROR: Gemini exited with code {gem_rev_rc}.")
+                _say(f"[clogem] ERROR: Gemini exited with code {gem_rev_rc}.")
                 if (gem_rev_err or "").strip():
                     clip = (gem_rev_err or "").strip()[:1200]
                     if len((gem_rev_err or "").strip()) > 1200:
@@ -3956,7 +3956,7 @@ Return project edits as:
                 console.print(
                     Text(
                         "Free-tier quotas or network issues can cause long waits or failures. "
-                        "Try again or set COGEM_SUBPROCESS_TIMEOUT_SEC.",
+                        "Try again or set CLOGEM_SUBPROCESS_TIMEOUT_SEC.",
                         style=MUTED,
                     )
                 )
@@ -3997,7 +3997,7 @@ Return ONLY code.
             imp_rc = 1
             stream_diffs = (
                 role_provider_map.get("coder", "codex") == "codex"
-                and os.environ.get("COGEM_STREAM_DIFFS", "0").strip().lower()
+                and os.environ.get("CLOGEM_STREAM_DIFFS", "0").strip().lower()
                 not in ("0", "false", "no", "off", "disabled")
                 and sys.stdout.isatty()
             )
@@ -4009,7 +4009,7 @@ Return ONLY code.
                     import subprocess
                     from rich.live import Live
 
-                    diff_text = Text("[cogem] Streaming diff (v1 vs v2) ...", style=LOG_TRACE)
+                    diff_text = Text("[clogem] Streaming diff (v1 vs v2) ...", style=LOG_TRACE)
 
                     args = _codex_argv(codex_improve_prompt)
                     proc = subprocess.Popen(
@@ -4098,7 +4098,7 @@ Return ONLY code.
             if imp_rc != 0:
                 console.print(
                     Text(
-                        f"[cogem] WARNING: Codex revision exited with code {imp_rc}; "
+                        f"[clogem] WARNING: Codex revision exited with code {imp_rc}; "
                         "using the first draft for diff/summary.",
                         style=LOG_WARN,
                     )
@@ -4162,12 +4162,12 @@ NEW:
                     summary += "\n" + (gem_sum_err or "").strip()[:600]
                 console.print(
                     Text(
-                        "[cogem] WARNING: Gemini summary step failed; see placeholder text in Summary section.",
+                        "[clogem] WARNING: Gemini summary step failed; see placeholder text in Summary section.",
                         style=LOG_WARN,
                     )
                 )
             _say(
-                "[cogem] Gemini summary step finished; printing the summary text below."
+                "[clogem] Gemini summary step finished; printing the summary text below."
             )
             trace_done(
                 "Summary text received; next I persist session memory (another Codex call), then this turn ends."
@@ -4181,13 +4181,13 @@ NEW:
 
             await auto_memory_after_code_session(memory, task, summary)
             _token_turn_footer()
-            _say("[cogem] Turn finished. What would you like to do next?")
+            _say("[clogem] Turn finished. What would you like to do next?")
 
         except KeyboardInterrupt:
             console.print()
             console.print(
                 Text(
-                    "Press Ctrl+C again to exit cogem.",
+                    "Press Ctrl+C again to exit clogem.",
                     style=MUTED,
                 )
             )

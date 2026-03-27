@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import types
 
-from cogem.vector_index import VectorIndex, VectorIndexConfig
+from clogem.vector_index import VectorIndex, VectorIndexConfig
 
 
 def test_vector_manifest_detects_changes(tmp_path: Path):
@@ -55,7 +55,7 @@ def test_build_or_load_skips_stale_check_within_throttle_window(tmp_path: Path, 
             return {"name": "code_chunks"}
 
     t = {"now": 100.0}
-    monkeypatch.setattr("cogem.vector_index.time.monotonic", lambda: t["now"])
+    monkeypatch.setattr("clogem.vector_index.time.monotonic", lambda: t["now"])
     monkeypatch.setattr(idx, "_index_is_stale", fake_stale)
     monkeypatch.setattr(idx, "_connect", lambda: FakeConn())
     monkeypatch.setitem(__import__("sys").modules, "lancedb", types.SimpleNamespace())

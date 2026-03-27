@@ -1,4 +1,4 @@
-# Cogem (Codex + Gemini Workflow)
+# Clogem (Codex + Gemini Workflow)
 
 A CLI-based development system that combines:
 
@@ -26,41 +26,41 @@ This creates a self-improving coding workflow that works for:
 
 ---
 
-## Why Use Cogem Over Standalone CLIs?
+## Why Use Clogem Over Standalone CLIs?
 
 Standalone CLIs like `codex` or `gemini` are great for quick, direct edits.  
-Cogem is optimized for engineering quality on larger tasks by adding routing, review, and validation structure around model calls.
+Clogem is optimized for engineering quality on larger tasks by adding routing, review, and validation structure around model calls.
 
 ### 1) Workflow Rigor (Dual-Agent Loop)
 
 - **Standalone:** usually single-author flow (model writes, human reviews).
-- **Cogem:** `Codex draft -> Gemini independent review -> Codex improve`, which mirrors a PR author/reviewer pattern and reduces shallow or hallucinated output.
+- **Clogem:** `Codex draft -> Gemini independent review -> Codex improve`, which mirrors a PR author/reviewer pattern and reduces shallow or hallucinated output.
 
 ### 2) Intent Routing + Prerequisite-First Handling
 
 - **Standalone:** mixed prompts can jump into implementation too early.
-- **Cogem:** routing layer separates conversational vs build turns and can answer prerequisite questions before entering the build loop.
+- **Clogem:** routing layer separates conversational vs build turns and can answer prerequisite questions before entering the build loop.
 
 ### 3) Specialized Frontend Stage (Stitch)
 
 - **Standalone:** strong general-purpose UI generation, but no dedicated design handoff stage.
-- **Cogem:** UI-heavy tasks can route through Stitch adapters/manual handoff first, then continue with the normal build/review/improve pipeline.
+- **Clogem:** UI-heavy tasks can route through Stitch adapters/manual handoff first, then continue with the normal build/review/improve pipeline.
 - Includes clipboard-assisted handoff in manual Stitch mode when available.
 
 ### 4) Persistent Context + Managed Memory
 
 - **Standalone:** strong session context, but long-term project decisions are easy to lose across runs.
-- **Cogem:** persists stack/constraints/decisions in `memory.json`, with pruning/summarization to keep context focused instead of unbounded growth.
+- **Clogem:** persists stack/constraints/decisions in `memory.json`, with pruning/summarization to keep context focused instead of unbounded growth.
 
 ### 5) Self-Correcting Validation Loop
 
 - **Standalone:** you usually run tests/lint manually and paste failures back.
-- **Cogem:** can run detected checks in sandbox/Docker and feed failures back into an automatic correction pass.
+- **Clogem:** can run detected checks in sandbox/Docker and feed failures back into an automatic correction pass.
 
 ### Quick Comparison
 
 
-| Dimension          | Standalone CLIs (`gemini`, `codex`) | Cogem                                         |
+| Dimension          | Standalone CLIs (`gemini`, `codex`) | Clogem                                         |
 | ------------------ | ----------------------------------- | --------------------------------------------- |
 | Model usage        | Single-provider, direct             | Multi-provider orchestration                  |
 | Review process     | Human-only review                   | Cross-model peer review (`Codex <-> Gemini`)  |
@@ -72,7 +72,7 @@ Cogem is optimized for engineering quality on larger tasks by adding routing, re
 ### Practical Guidance
 
 - Use **standalone CLIs** for quick scripts, short Q&A, and small one-file changes.
-- Use **Cogem** for feature builds, refactors, architecture work, and tasks where you want independent review plus automated verification.
+- Use **Clogem** for feature builds, refactors, architecture work, and tasks where you want independent review plus automated verification.
 
 ---
 
@@ -81,7 +81,7 @@ Cogem is optimized for engineering quality on larger tasks by adding routing, re
 ```
 ai_automation/
 │
-├── cogem/
+├── clogem/
 │   ├── cli.py
 │   ├── stitch/
 │   │   ├── __init__.py
@@ -109,14 +109,14 @@ ai_automation/
 | Component                 | Purpose                                                                                       |
 | ------------------------- | --------------------------------------------------------------------------------------------- |
 | **WSL** (Windows)         | Recommended environment on Windows; use a Linux distro (e.g. Ubuntu) for Node + Python + CLIs |
-| **Python 3**              | Runs `cogem` (via pipx)                                                                       |
-| **pipx**                  | Isolated install of the `cogem` command                                                       |
+| **Python 3**              | Runs `clogem` (via pipx)                                                                       |
+| **pipx**                  | Isolated install of the `clogem` command                                                       |
 | **Node.js + npm**         | Installs **Codex CLI** and **Gemini CLI** globally                                            |
 | **Codex CLI** (`codex`)   | OpenAI Codex — generation (`codex exec …`)                                                    |
 | **Gemini CLI** (`gemini`) | Google Gemini — review (`gemini -p …`)                                                        |
 
 
-On Windows you can run `cogem` without WSL if `codex` and `gemini` are already on your `PATH` (same npm global install as below).
+On Windows you can run `clogem` without WSL if `codex` and `gemini` are already on your `PATH` (same npm global install as below).
 
 ---
 
@@ -236,7 +236,7 @@ npm install -g @google/gemini-cli@latest
 npx @google/gemini-cli --help
 ```
 
-`cogem` expects the `gemini` command on `PATH`, so prefer a global install for daily use.
+`clogem` expects the `gemini` command on `PATH`, so prefer a global install for daily use.
 
 ### Verify
 
@@ -249,19 +249,19 @@ Complete **Sign in with Google** or set `**GEMINI_API_KEY`** as described in the
 
 ---
 
-## Part E — This project (cogem)
+## Part E — This project (clogem)
 
 ### 1. Get the code
 
 ```bash
 cd ~
-git clone https://github.com/surya-shreevathsa11/CoGem.git
-cd <CoGem>
+git clone https://github.com/surya-shreevathsa11/Clogem.git
+cd <Clogem>
 ```
 
 Or clone your repo URL and `cd` into it.
 
-### 2. Install the `cogem` command
+### 2. Install the `clogem` command
 
 If you still have the old `devai` package from an earlier install:
 
@@ -278,10 +278,10 @@ pipx install -e .
 ### 3. Run
 
 ```bash
-cogem
+clogem
 ```
 
-On first launch, **cogem** creates a `**memory.json`** file next to the project (it is git-ignored). Each clone or machine gets its own file for saved stack notes and context—nothing personal is shipped with the repo.
+On first launch, **clogem** creates a `**memory.json`** file next to the project (it is git-ignored). Each clone or machine gets its own file for saved stack notes and context—nothing personal is shipped with the repo.
 
 ---
 
@@ -290,7 +290,7 @@ On first launch, **cogem** creates a `**memory.json`** file next to the project 
 ### General pattern
 
 ```
-cogem
+clogem
 >>> your task
 ```
 
@@ -375,7 +375,7 @@ pipx install -e . --force
 
 ### LLM models and role/provider mapping
 
-Cogem supports three providers (`codex`, `gemini`, `claude`) and five roles:
+Clogem supports three providers (`codex`, `gemini`, `claude`) and five roles:
 `orchestrator`, `planner`, `coder`, `reviewer`, `summariser`.
 
 Default role map:
@@ -389,47 +389,47 @@ Default role map:
 You can override role mapping with:
 
 - `--role-provider ROLE=PROVIDER` (repeatable)
-- `COGEM_ROLE_PROVIDER_MAP` (comma-separated `role=provider` pairs)
+- `CLOGEM_ROLE_PROVIDER_MAP` (comma-separated `role=provider` pairs)
 
 Model overrides:
 
 
 | Provider         | Model source                               | Used for                                           |
 | ---------------- | ------------------------------------------ | -------------------------------------------------- |
-| **Codex**        | `--codex-model` / `COGEM_CODEX_MODEL`      | Any role mapped to `codex`                         |
-| **Gemini**       | `--gemini-model` / `COGEM_GEMINI_MODEL`    | Any role mapped to `gemini`                        |
-| **Claude (SDK)** | `--claude-model` / `COGEM_CLAUDE_MODEL`    | Any role mapped to `claude` (SDK-only, no CLI fallback) |
+| **Codex**        | `--codex-model` / `CLOGEM_CODEX_MODEL`      | Any role mapped to `codex`                         |
+| **Gemini**       | `--gemini-model` / `CLOGEM_GEMINI_MODEL`    | Any role mapped to `gemini`                        |
+| **Claude (SDK)** | `--claude-model` / `CLOGEM_CLAUDE_MODEL`    | Any role mapped to `claude` (SDK-only, no CLI fallback) |
 
 
-- **If you do not set a model** for a backend, cogem **does not pass `-m`** for that CLI, so **that tool’s default model** is used (same as running `codex` / `gemini` without `-m`).
+- **If you do not set a model** for a backend, clogem **does not pass `-m`** for that CLI, so **that tool’s default model** is used (same as running `codex` / `gemini` without `-m`).
 - **Valid `MODEL_ID` strings** depend on your installed CLI version and account (OpenAI, Google, etc.). Examples people use include `o3`, `gemini-2.5-pro`, `gemini-2.5-flash`; exact names are defined by each CLI — use `codex exec --help` and `gemini --help` on your machine.
 
 ```bash
-cogem --codex-model o3 --gemini-model gemini-2.5-pro
-cogem --role-provider coder=claude --role-provider reviewer=gemini --claude-model claude-sonnet-4-6
+clogem --codex-model o3 --gemini-model gemini-2.5-pro
+clogem --role-provider coder=claude --role-provider reviewer=gemini --claude-model claude-sonnet-4-6
 ```
 
 Only one backend:
 
 ```bash
-cogem --gemini-model gemini-2.5-flash
-cogem --codex-model o3
+clogem --gemini-model gemini-2.5-flash
+clogem --codex-model o3
 ```
 
 If a flag is omitted, you can still set defaults with the environment variables in the table below.
 
 ### SDK-backed model calls (OpenAI + Google GenAI)
 
-Cogem supports SDK backends for OpenAI, Google GenAI, and Anthropic.
+Clogem supports SDK backends for OpenAI, Google GenAI, and Anthropic.
 
-- `COGEM_CODEX_BACKEND=auto|sdk|cli` (default `auto`)
-- `COGEM_GEMINI_BACKEND=auto|sdk|cli` (default `auto`)
-- `COGEM_CLAUDE_BACKEND=sdk` (Claude is SDK-only)
-- `COGEM_CODEX_SDK_MODEL` (default `gpt-4.1-mini`)
-- `COGEM_GEMINI_SDK_MODEL` (default `gemini-2.5-flash`)
-- `COGEM_CLAUDE_SDK_MODEL` (default `claude-sonnet-4-6`)
+- `CLOGEM_CODEX_BACKEND=auto|sdk|cli` (default `auto`)
+- `CLOGEM_GEMINI_BACKEND=auto|sdk|cli` (default `auto`)
+- `CLOGEM_CLAUDE_BACKEND=sdk` (Claude is SDK-only)
+- `CLOGEM_CODEX_SDK_MODEL` (default `gpt-4.1-mini`)
+- `CLOGEM_GEMINI_SDK_MODEL` (default `gemini-2.5-flash`)
+- `CLOGEM_CLAUDE_SDK_MODEL` (default `claude-sonnet-4-6`)
 
-In `auto` mode, Cogem tries SDK first and falls back to CLI if unavailable.
+In `auto` mode, Clogem tries SDK first and falls back to CLI if unavailable.
 For SDK mode you need:
 
 - OpenAI: `OPENAI_API_KEY`
@@ -438,31 +438,31 @@ For SDK mode you need:
 
 Router secondary intent classifier:
 
-- `COGEM_SECONDARY_INTENT_LLM=1` (default on)
-- `COGEM_ROUTER_CLASSIFIER_MODEL` (default `gemini-2.5-flash-lite`)
+- `CLOGEM_SECONDARY_INTENT_LLM=1` (default on)
+- `CLOGEM_ROUTER_CLASSIFIER_MODEL` (default `gemini-2.5-flash-lite`)
 
 Async LLM execution path:
 
-- `COGEM_ASYNC_LLM=1` (default on): SDK calls run through async wrappers (`asyncio` + thread offload).
+- `CLOGEM_ASYNC_LLM=1` (default on): SDK calls run through async wrappers (`asyncio` + thread offload).
 
 ### In-session commands
 
-On an interactive terminal, the main task prompt uses **prompt-style completion**: type `/` or `@` and use **Tab** (or keep typing) to open a **two-column** menu (command/path + short description) with a **dark** theme. For colors closest to the Codex-style blue/grey look, use **Windows Terminal** or another **true-color** terminal. Set `**COGEM_NO_TRUE_COLOR=1`** if the menu colors look wrong on legacy consoles.
+On an interactive terminal, the main task prompt uses **prompt-style completion**: type `/` or `@` and use **Tab** (or keep typing) to open a **two-column** menu (command/path + short description) with a **dark** theme. For colors closest to the Codex-style blue/grey look, use **Windows Terminal** or another **true-color** terminal. Set `**CLOGEM_NO_TRUE_COLOR=1`** if the menu colors look wrong on legacy consoles.
 
-While Cogem is running, you can change models without restarting:
+While Clogem is running, you can change models without restarting:
 
 
 | Command                                    | Meaning                                                                       |
 | ------------------------------------------ | ----------------------------------------------------------------------------- |
 | `/codex/model`                             | Show Codex LLM (`codex exec -m`), this session, and startup default           |
 | `/codex/model <MODEL_ID>`                  | Use that ID for **all Codex** calls this session                              |
-| `/codex/model reset`                       | Restore Codex model from `--codex-model` / `COGEM_CODEX_MODEL`                |
+| `/codex/model reset`                       | Restore Codex model from `--codex-model` / `CLOGEM_CODEX_MODEL`                |
 | `/gemini/model`                            | Show Gemini LLM (`gemini -m`), this session, and startup default              |
 | `/gemini/model <MODEL_ID>`                 | Use that ID for **all Gemini** calls this session                             |
-| `/gemini/model reset`                      | Restore Gemini model from `--gemini-model` / `COGEM_GEMINI_MODEL`             |
+| `/gemini/model reset`                      | Restore Gemini model from `--gemini-model` / `CLOGEM_GEMINI_MODEL`             |
 | `/claude/model`                            | Show Claude LLM (SDK), this session, and startup default                      |
 | `/claude/model <MODEL_ID>`                 | Use that ID for **all Claude SDK** calls this session                         |
-| `/claude/model reset`                      | Restore Claude model from `--claude-model` / `COGEM_CLAUDE_MODEL`             |
+| `/claude/model reset`                      | Restore Claude model from `--claude-model` / `CLOGEM_CLAUDE_MODEL`             |
 | `/roles`                                   | Show active role-to-provider mapping                                           |
 | `/repo/info`                               | Show repo info (git root, branch, last commit, status)                        |
 | `/test`                                    | Run project tests (best-effort; Python or Node)                               |
@@ -481,13 +481,13 @@ While Cogem is running, you can change models without restarting:
 
 ## Automated Validation Loop (Execution):
 
-When you use `/build`, cogem now attempts to "close the loop" by running the detected repo checks and feeding failures back into Codex for a second pass.
+When you use `/build`, clogem now attempts to "close the loop" by running the detected repo checks and feeding failures back into Codex for a second pass.
 
 - It runs the detected test command (Python: `python -m pytest`, Node: `npm test`).
 - It runs the detected lint command when available (Python: `ruff` or `flake8`; Node: `npm run lint`/`npm run eslint`).
 - If `tsconfig.json` exists in a Node repo, it also runs `npx tsc --noEmit` (best-effort).
 - Safety: it executes these checks inside a temporary copy of your repo to reduce the risk of host file deletion.
-- The loop stops after `COGEM_VALIDATION_MAX_ATTEMPTS` (default `2`) attempts.
+- The loop stops after `CLOGEM_VALIDATION_MAX_ATTEMPTS` (default `2`) attempts.
 
 ### Docker-Preferred, Fallback to Sandbox
 
@@ -495,17 +495,17 @@ By default, validation uses the filesystem sandbox (fast, zero Docker setup).
 
 If you want Docker validation (preferred when available), enable it explicitly:
 
-- CLI: `cogem --validation-docker`
-- Env: `COGEM_VALIDATION_DOCKER=yes`
+- CLI: `clogem --validation-docker`
+- Env: `CLOGEM_VALIDATION_DOCKER=yes`
 
 Strict mode:
 
-- If `COGEM_STRICT_SANDBOX=1` and Docker is not available, cogem **skips validation** (so you keep zero-friction behavior).
+- If `CLOGEM_STRICT_SANDBOX=1` and Docker is not available, clogem **skips validation** (so you keep zero-friction behavior).
 
 Docker base images:
 
-- Python: `python:3.12-slim` (override with `COGEM_DOCKER_PY_IMAGE`)
-- Node: `node:20-slim` (override with `COGEM_DOCKER_NODE_IMAGE`)
+- Python: `python:3.12-slim` (override with `CLOGEM_DOCKER_PY_IMAGE`)
+- Node: `node:20-slim` (override with `CLOGEM_DOCKER_NODE_IMAGE`)
 
 ### Faster Filesystem Sandbox
 
@@ -536,34 +536,34 @@ In your task text you can reference paths so their contents are included in **BU
 
 Symbol mentions (ctags/universal-ctags; best-effort):
 
-- `@MyClassName` or `@my_function` — if `universal-ctags`/`ctags` is available on PATH, Cogem will inline a short snippet around the symbol definition (instead of requiring an explicit `@path/to/file`).
-You can disable this with `COGEM_SYMBOL_INDEX=0`.
+- `@MyClassName` or `@my_function` — if `universal-ctags`/`ctags` is available on PATH, Clogem will inline a short snippet around the symbol definition (instead of requiring an explicit `@path/to/file`).
+You can disable this with `CLOGEM_SYMBOL_INDEX=0`.
 
-Paths must resolve under the **repo root**, your **current working directory**, or `**COGEM_CODEX_WORKDIR`**. Anything else is skipped with a note in the attachment block.
+Paths must resolve under the **repo root**, your **current working directory**, or `**CLOGEM_CODEX_WORKDIR`**. Anything else is skipped with a note in the attachment block.
 
-Optional limits: `COGEM_AT_MAX_FILE_BYTES` (default `400000`), `COGEM_AT_MAX_TOTAL_CHARS` (default `120000`) for the whole attachment block.
+Optional limits: `CLOGEM_AT_MAX_FILE_BYTES` (default `400000`), `CLOGEM_AT_MAX_TOTAL_CHARS` (default `120000`) for the whole attachment block.
 
 `@` references are **not** inlined for pure **CHAT** routing (you’ll see a short notice).
 
 ### Google Stitch (UI-heavy frontend tasks)
 
-For **frontend-first** builds (websites, landing pages, dashboards, HTML/CSS/JS UIs), cogem can run a **Stitch stage** *before* the usual Codex draft → Gemini review → Codex improve loop:
+For **frontend-first** builds (websites, landing pages, dashboards, HTML/CSS/JS UIs), clogem can run a **Stitch stage** *before* the usual Codex draft → Gemini review → Codex improve loop:
 
 1. **Detect** a UI-heavy task from your prompt (heuristic).
 2. **Try adapters** in order: optional CLI → optional HTTP → optional browser stub (off by default) → **manual handoff**.
 3. **Fold** any Stitch output (or your export) into the Codex/Gemini prompts, plus strict rules from `.ai/STITCH_WEBSITE.md`.
 4. **Non-frontend** tasks are unchanged.
 
-**Prerequisite questions first:** If you ask how to do something *before* a build (e.g. *“build a site, but before that tell me how to connect Stitch via MCP”*), cogem treats that turn as **conversation first** — no build pipeline, no Stitch stage. Use `**/build`** on a later turn when you only want implementation.
+**Prerequisite questions first:** If you ask how to do something *before* a build (e.g. *“build a site, but before that tell me how to connect Stitch via MCP”*), clogem treats that turn as **conversation first** — no build pipeline, no Stitch stage. Use `**/build`** on a later turn when you only want implementation.
 
-**Disable** the Stitch stage entirely: `COGEM_STITCH=0` or `cogem --no-stitch`.
+**Disable** the Stitch stage entirely: `CLOGEM_STITCH=0` or `clogem --no-stitch`.
 
-**Manual mode** (default when no adapter succeeds): cogem prints a ready-to-paste **Stitch prompt**, then asks for your **exported HTML/CSS** (paste or `@path`). Non-interactive stdin skips the paste step; use `COGEM_STITCH_CLI` or `COGEM_STITCH_HTTP_URL` instead.
-When available, cogem also copies the generated Stitch prompt to your clipboard automatically (uses `pyperclip` if installed, else tkinter fallback).
+**Manual mode** (default when no adapter succeeds): clogem prints a ready-to-paste **Stitch prompt**, then asks for your **exported HTML/CSS** (paste or `@path`). Non-interactive stdin skips the paste step; use `CLOGEM_STITCH_CLI` or `CLOGEM_STITCH_HTTP_URL` instead.
+When available, clogem also copies the generated Stitch prompt to your clipboard automatically (uses `pyperclip` if installed, else tkinter fallback).
 
 ### Multimodal UI Validation (Vision Pass)
 
-For frontend-heavy turns, cogem can run a visual validation stage after files are written:
+For frontend-heavy turns, clogem can run a visual validation stage after files are written:
 
 1. Capture a headless screenshot (Playwright; static `index.html` style outputs).
 2. Send screenshot + task intent to Gemini Vision for layout review.
@@ -571,8 +571,8 @@ For frontend-heavy turns, cogem can run a visual validation stage after files ar
 
 Env controls:
 
-- `COGEM_VISUAL_REVIEW=1` (default on)
-- `COGEM_VISUAL_REVIEW_MODEL` (default `gemini-2.5-pro`)
+- `CLOGEM_VISUAL_REVIEW=1` (default on)
+- `CLOGEM_VISUAL_REVIEW_MODEL` (default `gemini-2.5-pro`)
 
 Requirements for screenshot capture:
 
@@ -581,36 +581,36 @@ Requirements for screenshot capture:
 
 #### Stitch MCP (`stitch-mcp` on npm)
 
-The community **stitch-mcp** package is an MCP **server** that talks to Google’s Stitch API (with `gcloud` auth). Cogem acts as a minimal MCP **client** over stdio and calls the generate tool automatically for frontend tasks (unless you disable MCP):
+The community **stitch-mcp** package is an MCP **server** that talks to Google’s Stitch API (with `gcloud` auth). Clogem acts as a minimal MCP **client** over stdio and calls the generate tool automatically for frontend tasks (unless you disable MCP):
 
 1. Install **Google Cloud SDK**, run `gcloud auth application-default login`, and set `**GOOGLE_CLOUD_PROJECT`** (see the [stitch-mcp README](https://www.npmjs.com/package/stitch-mcp)).
 2. Install **Node.js** so `**npx`** is available.
-3. (Optional) Override defaults if needed: `COGEM_STITCH_MCP_CMD=npx` and `COGEM_STITCH_MCP_ARGS=-y stitch-mcp`.
-4. Run a frontend-style task in cogem; the adapter chain will try **CLI → MCP → HTTP → manual**.
-5. To disable MCP explicitly: `COGEM_STITCH_MCP=0`.
+3. (Optional) Override defaults if needed: `CLOGEM_STITCH_MCP_CMD=npx` and `CLOGEM_STITCH_MCP_ARGS=-y stitch-mcp`.
+4. Run a frontend-style task in clogem; the adapter chain will try **CLI → MCP → HTTP → manual**.
+5. To disable MCP explicitly: `CLOGEM_STITCH_MCP=0`.
 
-If MCP fails (auth, API, or tool schema), cogem **falls back** to manual export as before. Tool name defaults to `generate_screen_from_text`; override with `COGEM_STITCH_MCP_TOOL` if your server exposes a different name.
+If MCP fails (auth, API, or tool schema), clogem **falls back** to manual export as before. Tool name defaults to `generate_screen_from_text`; override with `CLOGEM_STITCH_MCP_TOOL` if your server exposes a different name.
 
-There is **no guaranteed public Stitch API** in cogem: integration is **pluggable** via env vars (see table below). Validity of any HTTP/CLI tool is **your** responsibility.
+There is **no guaranteed public Stitch API** in clogem: integration is **pluggable** via env vars (see table below). Validity of any HTTP/CLI tool is **your** responsibility.
 
 ---
 
 ## Deep MCP Plugin Integration
 
-Beyond Stitch, Cogem can connect to external MCP tool servers (Jira, Sentry, Datadog, DB schema, custom tools).
+Beyond Stitch, Clogem can connect to external MCP tool servers (Jira, Sentry, Datadog, DB schema, custom tools).
 
 ### Plugin configuration
 
 Built-in aliases (set command + optional args):
 
-- `COGEM_MCP_JIRA_CMD`, `COGEM_MCP_JIRA_ARGS`
-- `COGEM_MCP_SENTRY_CMD`, `COGEM_MCP_SENTRY_ARGS`
-- `COGEM_MCP_DATADOG_CMD`, `COGEM_MCP_DATADOG_ARGS`
-- `COGEM_MCP_DBSCHEMA_CMD`, `COGEM_MCP_DBSCHEMA_ARGS`
+- `CLOGEM_MCP_JIRA_CMD`, `CLOGEM_MCP_JIRA_ARGS`
+- `CLOGEM_MCP_SENTRY_CMD`, `CLOGEM_MCP_SENTRY_ARGS`
+- `CLOGEM_MCP_DATADOG_CMD`, `CLOGEM_MCP_DATADOG_ARGS`
+- `CLOGEM_MCP_DBSCHEMA_CMD`, `CLOGEM_MCP_DBSCHEMA_ARGS`
 
 Custom registry JSON:
 
-- `COGEM_MCP_PLUGINS_JSON`
+- `CLOGEM_MCP_PLUGINS_JSON`
 
 Example:
 
@@ -627,18 +627,18 @@ Example:
 2. `/mcp/tools jira`
 3. `/mcp/call jira get_ticket {"id":"402"}`
 
-This enables workflows like: inspect a Jira ticket, fetch Sentry traces, read DB schema context, then implement + validate fixes in one Cogem session.
+This enables workflows like: inspect a Jira ticket, fetch Sentry traces, read DB schema context, then implement + validate fixes in one Clogem session.
 
 ---
 
 ## Deep Semantic Context (Full-Repo RAG)
 
-Cogem supports local vector retrieval to find related logic beyond exact symbols/imports.
+Clogem supports local vector retrieval to find related logic beyond exact symbols/imports.
 
 - Backend: LanceDB + sentence-transformers (local embeddings)
 - Scope: full repo source traversal (configurable extensions)
 - Retrieval: semantic nearest-neighbor chunks injected into build context
-- Fallback: if vector deps are unavailable, Cogem falls back to structural repo context
+- Fallback: if vector deps are unavailable, Clogem falls back to structural repo context
 
 ### What this helps with
 
@@ -652,15 +652,15 @@ Cogem supports local vector retrieval to find related logic beyond exact symbols
 
 ### Index lifecycle
 
-- Index is stored under `.cogem/vector_db`
-- Cogem maintains a file-hash manifest and only rebuilds the index when tracked source content changes (or when forced)
+- Index is stored under `.clogem/vector_db`
+- Clogem maintains a file-hash manifest and only rebuilds the index when tracked source content changes (or when forced)
 
 ### Controls
 
-- `COGEM_VECTOR_RAG=1` enable vector retrieval for build context
-- `COGEM_VECTOR_REBUILD=1` force rebuild
-- `COGEM_VECTOR_TOP_K` number of semantic matches
-- `COGEM_VECTOR_CHUNK_CHARS` chunk size
+- `CLOGEM_VECTOR_RAG=1` enable vector retrieval for build context
+- `CLOGEM_VECTOR_REBUILD=1` force rebuild
+- `CLOGEM_VECTOR_TOP_K` number of semantic matches
+- `CLOGEM_VECTOR_CHUNK_CHARS` chunk size
 
 Install optional deps:
 
@@ -675,71 +675,71 @@ pip install ".[vector]"
 
 | Variable                            | Purpose                                                                                                                                          |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `COGEM_AUTO_PERMISSIONS`            | `yes` / `no` — skip the interactive prompt for Codex `--full-auto` and Gemini `--yolo`                                                           |
-| `COGEM_ALLOW_LOCAL_COMMANDS`        | `yes` / `no` — allow local command execution for `/run`, `/test`, `/lint`, `/github/clone`, and build-time artifact auto-run                     |
-| `COGEM_RUN_POLICY`                  | strict by default; set `relaxed` to allow legacy broad `/run` command behavior                                                                   |
-| `COGEM_CODEX_WORKDIR`               | Absolute path passed to Codex `-C` (workspace root)                                                                                              |
-| `COGEM_CODEX_MODEL`                 | Default Codex LLM ID when `--codex-model` is not passed                                                                                          |
-| `COGEM_GEMINI_MODEL`                | Default Gemini LLM ID when `--gemini-model` is not passed                                                                                        |
-| `COGEM_CLAUDE_MODEL`                | Default Claude LLM ID when `--claude-model` is not passed                                                                                        |
-| `COGEM_ROLE_PROVIDER_MAP`           | Role mapping override: comma-separated `role=provider` pairs (e.g. `coder=claude,reviewer=gemini`)                                             |
-| `COGEM_CODEX_BACKEND`               | Backend mode for codex provider: `auto|sdk|cli`                                                                                                  |
-| `COGEM_GEMINI_BACKEND`              | Backend mode for gemini provider: `auto|sdk|cli`                                                                                                 |
-| `COGEM_CLAUDE_BACKEND`              | Backend mode for claude provider: `sdk`                                                                                                          |
-| `COGEM_CODEX_SDK_MODEL`             | SDK model used by codex provider when using OpenAI SDK                                                                                           |
-| `COGEM_GEMINI_SDK_MODEL`            | SDK model used by gemini provider when using Google GenAI SDK                                                                                    |
-| `COGEM_CLAUDE_SDK_MODEL`            | SDK model used by claude provider when using Anthropic SDK                                                                                       |
-| `COGEM_SUBPROCESS_TIMEOUT_SEC`      | Integer seconds; abort a stuck `codex` / `gemini` subprocess after this time                                                                     |
-| `COGEM_STREAM_DIFFS`                | `1`/`0` — stream a live unified diff during Codex improvements (opt-in; only when stdout is a TTY)                                               |
-| `COGEM_VALIDATION_DOCKER`           | `yes` / `no` — prefer Docker-based validation backend (tests/lint/typecheck). See `--validation-docker`                                          |
-| `COGEM_STRICT_SANDBOX`              | `1` / `0` — when `1`, require Docker for validation; if Docker is missing, cogem skips validation                                                |
-| `COGEM_DOCKER_PY_IMAGE`             | Docker image for Python validation (default `python:3.12-slim`)                                                                                  |
-| `COGEM_DOCKER_NODE_IMAGE`           | Docker image for Node validation (default `node:20-slim`)                                                                                        |
-| `COGEM_VALIDATION_MAX_ATTEMPTS`     | Max automated validation iterations for `/build` (default `2`)                                                                                   |
-| `COGEM_TYPECHECK_PYRIGHT`           | `1`/`0` — enable pyright type checking for Python projects (if `pyright` is on PATH). (best-effort; default `1`)                                 |
-| `COGEM_AT_MAX_FILE_BYTES`           | Max bytes read per `@` file (default `400000`)                                                                                                   |
-| `COGEM_AT_MAX_TOTAL_CHARS`          | Max total characters for all `@` attachments in one turn (default `120000`)                                                                      |
-| `COGEM_AT_MAX_PDF_PAGES`            | Max pages extracted from a PDF `@` mention (default `30`)                                                                                        |
-| `COGEM_SYMBOL_INDEX`                | `1` (default) / `0` — enable ctags-based symbol resolution for `@MyClassName` mentions (best-effort; requires `universal-ctags`/`ctags` on PATH) |
-| `COGEM_SYMBOL_DEP_CONTEXT`          | `1` (default) / `0` — enable symbol-aware dependency injection for BUILD prompts based on `@some_file.py` imports                                |
-| `COGEM_SYMBOL_DEP_MAX_SYMBOLS`      | Max imported symbols to resolve/inject per build turn (default `20`)                                                                             |
-| `COGEM_SYMBOL_DEP_MAX_CHARS`        | Cap for the injected dependency context text (default `4000`)                                                                                    |
-| `COGEM_SYMBOL_COMPLETIONS`          | `1`/`0` — include `@MySymbol` completions in the `@` menu (best-effort; requires ctags/universal-ctags for real tags)                            |
-| `COGEM_FUZZY_AT_COMPLETIONS`        | `1`/`0` — enable fuzzy fallback for `@` path completion when prefix matches return nothing                                                       |
-| `COGEM_FUZZY_SYMBOL_COMPLETIONS`    | `1`/`0` — enable fuzzy fallback for `@` symbol completion when prefix matches return nothing                                                     |
-| `COGEM_AUTO_REPO_CONTEXT`           | `1`/`0` — auto-retrieve relevant repo snippets for BUILD prompts (keyword + dependency graph)                                                    |
-| `COGEM_AUTO_REPO_CONTEXT_MAX_CHARS` | Cap for injected auto repo context text (default `8000`)                                                                                         |
-| `COGEM_AUTO_REPO_CONTEXT_MAX_FILES` | Max files to inject (default `6`)                                                                                                                |
-| `COGEM_AUTO_REPO_CONTEXT_MAX_DEPTH` | Dependency expansion depth (default `2`)                                                                                                         |
-| `COGEM_VECTOR_RAG`                  | `1`/`0` — enable LanceDB semantic retrieval for BUILD prompts (best-effort; requires extra deps)                                                 |
-| `COGEM_VECTOR_REBUILD`              | `1`/`0` — rebuild the local vector index (default `0`)                                                                                           |
-| `COGEM_VECTOR_TOP_K`                | Number of semantic matches to inject (default `8`)                                                                                               |
-| `COGEM_VECTOR_CHUNK_CHARS`          | Chunk size for embedding (default `2500`)                                                                                                        |
-| `COGEM_STITCH`                      | `1` (default) / `0` — enable or disable the Stitch stage for UI-heavy tasks                                                                      |
-| `COGEM_STITCH_CLI`                  | Optional: executable for a Stitch adapter (stdin sends the prompt unless `COGEM_STITCH_CLI_STDIN=0` + temp file)                                 |
-| `COGEM_STITCH_CLI_ARGS`             | Extra argv appended after the CLI command                                                                                                        |
-| `COGEM_STITCH_CLI_STDIN`            | `1` (default) / `0` — pass prompt on stdin vs temp file path as last arg                                                                         |
-| `COGEM_STITCH_HTTP_URL`             | Optional: HTTP endpoint for JSON `{ "prompt": "..." }` (customize body with `COGEM_STITCH_HTTP_BODY`)                                            |
-| `COGEM_STITCH_HTTP_TOKEN`           | Optional `Authorization: Bearer` for HTTP adapter                                                                                                |
-| `COGEM_STITCH_TIMEOUT_SEC`          | Timeout for CLI/HTTP Stitch attempts (default `300`)                                                                                             |
-| `COGEM_STITCH_BROWSER`              | `1` to acknowledge browser automation (not implemented; kept off by default)                                                                     |
-| `COGEM_STITCH_MCP`                  | MCP stdio client toggle for `npx stitch-mcp` (default: **enabled**; set `0`/`false` to disable)                                                  |
-| `COGEM_STITCH_MCP_CMD`              | Command to launch MCP server (default `npx`)                                                                                                     |
-| `COGEM_STITCH_MCP_ARGS`             | Args for the server (default `-y stitch-mcp`)                                                                                                    |
-| `COGEM_STITCH_MCP_TOOL`             | MCP tool name (default `generate_screen_from_text`)                                                                                              |
-| `COGEM_STITCH_MCP_PROMPT_KEY`       | JSON argument key for the prompt (default `prompt`)                                                                                              |
-| `COGEM_STITCH_MCP_TOOL_ARGS_JSON`   | Optional extra JSON object merged into tool `arguments`                                                                                          |
-| `COGEM_STITCH_MCP_TIMEOUT_SEC`      | Max seconds for the MCP round-trip (default `300`)                                                                                               |
-| `COGEM_MCP_JIRA_CMD`                | MCP server command for Jira plugin alias                                                                                                         |
-| `COGEM_MCP_JIRA_ARGS`               | Args for Jira MCP server command                                                                                                                 |
-| `COGEM_MCP_SENTRY_CMD`              | MCP server command for Sentry plugin alias                                                                                                       |
-| `COGEM_MCP_SENTRY_ARGS`             | Args for Sentry MCP server command                                                                                                               |
-| `COGEM_MCP_DATADOG_CMD`             | MCP server command for Datadog plugin alias                                                                                                      |
-| `COGEM_MCP_DATADOG_ARGS`            | Args for Datadog MCP server command                                                                                                              |
-| `COGEM_MCP_DBSCHEMA_CMD`            | MCP server command for DB schema plugin alias                                                                                                    |
-| `COGEM_MCP_DBSCHEMA_ARGS`           | Args for DB schema MCP server command                                                                                                            |
-| `COGEM_MCP_PLUGINS_JSON`            | JSON registry for arbitrary MCP plugins (`name -> {cmd,args,env,timeout_sec}`)                                                                   |
-| `COGEM_MCP_TIMEOUT_SEC`             | Default timeout for MCP plugin alias servers (default `60`)                                                                                      |
+| `CLOGEM_AUTO_PERMISSIONS`            | `yes` / `no` — skip the interactive prompt for Codex `--full-auto` and Gemini `--yolo`                                                           |
+| `CLOGEM_ALLOW_LOCAL_COMMANDS`        | `yes` / `no` — allow local command execution for `/run`, `/test`, `/lint`, `/github/clone`, and build-time artifact auto-run                     |
+| `CLOGEM_RUN_POLICY`                  | strict by default; set `relaxed` to allow legacy broad `/run` command behavior                                                                   |
+| `CLOGEM_CODEX_WORKDIR`               | Absolute path passed to Codex `-C` (workspace root)                                                                                              |
+| `CLOGEM_CODEX_MODEL`                 | Default Codex LLM ID when `--codex-model` is not passed                                                                                          |
+| `CLOGEM_GEMINI_MODEL`                | Default Gemini LLM ID when `--gemini-model` is not passed                                                                                        |
+| `CLOGEM_CLAUDE_MODEL`                | Default Claude LLM ID when `--claude-model` is not passed                                                                                        |
+| `CLOGEM_ROLE_PROVIDER_MAP`           | Role mapping override: comma-separated `role=provider` pairs (e.g. `coder=claude,reviewer=gemini`)                                             |
+| `CLOGEM_CODEX_BACKEND`               | Backend mode for codex provider: `auto|sdk|cli`                                                                                                  |
+| `CLOGEM_GEMINI_BACKEND`              | Backend mode for gemini provider: `auto|sdk|cli`                                                                                                 |
+| `CLOGEM_CLAUDE_BACKEND`              | Backend mode for claude provider: `sdk`                                                                                                          |
+| `CLOGEM_CODEX_SDK_MODEL`             | SDK model used by codex provider when using OpenAI SDK                                                                                           |
+| `CLOGEM_GEMINI_SDK_MODEL`            | SDK model used by gemini provider when using Google GenAI SDK                                                                                    |
+| `CLOGEM_CLAUDE_SDK_MODEL`            | SDK model used by claude provider when using Anthropic SDK                                                                                       |
+| `CLOGEM_SUBPROCESS_TIMEOUT_SEC`      | Integer seconds; abort a stuck `codex` / `gemini` subprocess after this time                                                                     |
+| `CLOGEM_STREAM_DIFFS`                | `1`/`0` — stream a live unified diff during Codex improvements (opt-in; only when stdout is a TTY)                                               |
+| `CLOGEM_VALIDATION_DOCKER`           | `yes` / `no` — prefer Docker-based validation backend (tests/lint/typecheck). See `--validation-docker`                                          |
+| `CLOGEM_STRICT_SANDBOX`              | `1` / `0` — when `1`, require Docker for validation; if Docker is missing, clogem skips validation                                                |
+| `CLOGEM_DOCKER_PY_IMAGE`             | Docker image for Python validation (default `python:3.12-slim`)                                                                                  |
+| `CLOGEM_DOCKER_NODE_IMAGE`           | Docker image for Node validation (default `node:20-slim`)                                                                                        |
+| `CLOGEM_VALIDATION_MAX_ATTEMPTS`     | Max automated validation iterations for `/build` (default `2`)                                                                                   |
+| `CLOGEM_TYPECHECK_PYRIGHT`           | `1`/`0` — enable pyright type checking for Python projects (if `pyright` is on PATH). (best-effort; default `1`)                                 |
+| `CLOGEM_AT_MAX_FILE_BYTES`           | Max bytes read per `@` file (default `400000`)                                                                                                   |
+| `CLOGEM_AT_MAX_TOTAL_CHARS`          | Max total characters for all `@` attachments in one turn (default `120000`)                                                                      |
+| `CLOGEM_AT_MAX_PDF_PAGES`            | Max pages extracted from a PDF `@` mention (default `30`)                                                                                        |
+| `CLOGEM_SYMBOL_INDEX`                | `1` (default) / `0` — enable ctags-based symbol resolution for `@MyClassName` mentions (best-effort; requires `universal-ctags`/`ctags` on PATH) |
+| `CLOGEM_SYMBOL_DEP_CONTEXT`          | `1` (default) / `0` — enable symbol-aware dependency injection for BUILD prompts based on `@some_file.py` imports                                |
+| `CLOGEM_SYMBOL_DEP_MAX_SYMBOLS`      | Max imported symbols to resolve/inject per build turn (default `20`)                                                                             |
+| `CLOGEM_SYMBOL_DEP_MAX_CHARS`        | Cap for the injected dependency context text (default `4000`)                                                                                    |
+| `CLOGEM_SYMBOL_COMPLETIONS`          | `1`/`0` — include `@MySymbol` completions in the `@` menu (best-effort; requires ctags/universal-ctags for real tags)                            |
+| `CLOGEM_FUZZY_AT_COMPLETIONS`        | `1`/`0` — enable fuzzy fallback for `@` path completion when prefix matches return nothing                                                       |
+| `CLOGEM_FUZZY_SYMBOL_COMPLETIONS`    | `1`/`0` — enable fuzzy fallback for `@` symbol completion when prefix matches return nothing                                                     |
+| `CLOGEM_AUTO_REPO_CONTEXT`           | `1`/`0` — auto-retrieve relevant repo snippets for BUILD prompts (keyword + dependency graph)                                                    |
+| `CLOGEM_AUTO_REPO_CONTEXT_MAX_CHARS` | Cap for injected auto repo context text (default `8000`)                                                                                         |
+| `CLOGEM_AUTO_REPO_CONTEXT_MAX_FILES` | Max files to inject (default `6`)                                                                                                                |
+| `CLOGEM_AUTO_REPO_CONTEXT_MAX_DEPTH` | Dependency expansion depth (default `2`)                                                                                                         |
+| `CLOGEM_VECTOR_RAG`                  | `1`/`0` — enable LanceDB semantic retrieval for BUILD prompts (best-effort; requires extra deps)                                                 |
+| `CLOGEM_VECTOR_REBUILD`              | `1`/`0` — rebuild the local vector index (default `0`)                                                                                           |
+| `CLOGEM_VECTOR_TOP_K`                | Number of semantic matches to inject (default `8`)                                                                                               |
+| `CLOGEM_VECTOR_CHUNK_CHARS`          | Chunk size for embedding (default `2500`)                                                                                                        |
+| `CLOGEM_STITCH`                      | `1` (default) / `0` — enable or disable the Stitch stage for UI-heavy tasks                                                                      |
+| `CLOGEM_STITCH_CLI`                  | Optional: executable for a Stitch adapter (stdin sends the prompt unless `CLOGEM_STITCH_CLI_STDIN=0` + temp file)                                 |
+| `CLOGEM_STITCH_CLI_ARGS`             | Extra argv appended after the CLI command                                                                                                        |
+| `CLOGEM_STITCH_CLI_STDIN`            | `1` (default) / `0` — pass prompt on stdin vs temp file path as last arg                                                                         |
+| `CLOGEM_STITCH_HTTP_URL`             | Optional: HTTP endpoint for JSON `{ "prompt": "..." }` (customize body with `CLOGEM_STITCH_HTTP_BODY`)                                            |
+| `CLOGEM_STITCH_HTTP_TOKEN`           | Optional `Authorization: Bearer` for HTTP adapter                                                                                                |
+| `CLOGEM_STITCH_TIMEOUT_SEC`          | Timeout for CLI/HTTP Stitch attempts (default `300`)                                                                                             |
+| `CLOGEM_STITCH_BROWSER`              | `1` to acknowledge browser automation (not implemented; kept off by default)                                                                     |
+| `CLOGEM_STITCH_MCP`                  | MCP stdio client toggle for `npx stitch-mcp` (default: **enabled**; set `0`/`false` to disable)                                                  |
+| `CLOGEM_STITCH_MCP_CMD`              | Command to launch MCP server (default `npx`)                                                                                                     |
+| `CLOGEM_STITCH_MCP_ARGS`             | Args for the server (default `-y stitch-mcp`)                                                                                                    |
+| `CLOGEM_STITCH_MCP_TOOL`             | MCP tool name (default `generate_screen_from_text`)                                                                                              |
+| `CLOGEM_STITCH_MCP_PROMPT_KEY`       | JSON argument key for the prompt (default `prompt`)                                                                                              |
+| `CLOGEM_STITCH_MCP_TOOL_ARGS_JSON`   | Optional extra JSON object merged into tool `arguments`                                                                                          |
+| `CLOGEM_STITCH_MCP_TIMEOUT_SEC`      | Max seconds for the MCP round-trip (default `300`)                                                                                               |
+| `CLOGEM_MCP_JIRA_CMD`                | MCP server command for Jira plugin alias                                                                                                         |
+| `CLOGEM_MCP_JIRA_ARGS`               | Args for Jira MCP server command                                                                                                                 |
+| `CLOGEM_MCP_SENTRY_CMD`              | MCP server command for Sentry plugin alias                                                                                                       |
+| `CLOGEM_MCP_SENTRY_ARGS`             | Args for Sentry MCP server command                                                                                                               |
+| `CLOGEM_MCP_DATADOG_CMD`             | MCP server command for Datadog plugin alias                                                                                                      |
+| `CLOGEM_MCP_DATADOG_ARGS`            | Args for Datadog MCP server command                                                                                                              |
+| `CLOGEM_MCP_DBSCHEMA_CMD`            | MCP server command for DB schema plugin alias                                                                                                    |
+| `CLOGEM_MCP_DBSCHEMA_ARGS`           | Args for DB schema MCP server command                                                                                                            |
+| `CLOGEM_MCP_PLUGINS_JSON`            | JSON registry for arbitrary MCP plugins (`name -> {cmd,args,env,timeout_sec}`)                                                                   |
+| `CLOGEM_MCP_TIMEOUT_SEC`             | Default timeout for MCP plugin alias servers (default `60`)                                                                                      |
 
 
 ---
@@ -756,4 +756,4 @@ pip install ".[vector]"
 
 **Gemini CLI:** `npm install -g @google/gemini-cli`  
 
-**Cogem:** `pipx install -e .` then `cogem`  
+**Clogem:** `pipx install -e .` then `clogem`  

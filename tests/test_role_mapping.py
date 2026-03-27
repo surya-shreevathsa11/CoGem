@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from cogem.role_mapping import (
+from clogem.role_mapping import (
     DEFAULT_ROLE_PROVIDER_MAP,
     needed_providers,
     parse_role_provider_map_env,

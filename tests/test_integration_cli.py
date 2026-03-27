@@ -93,20 +93,20 @@ def _run_cli(repo_root: Path, stdin_text: str, bin_dir: Path) -> subprocess.Comp
     env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
     codex_exec = "codex.cmd" if os.name == "nt" else "codex"
     gemini_exec = "gemini.cmd" if os.name == "nt" else "gemini"
-    env["COGEM_CODEX_CMD"] = str(bin_dir / codex_exec)
-    env["COGEM_GEMINI_CMD"] = str(bin_dir / gemini_exec)
-    env["COGEM_AUTO_PERMISSIONS"] = "yes"
-    env["COGEM_ALLOW_LOCAL_COMMANDS"] = "yes"
-    env["COGEM_STITCH"] = "0"
-    env["COGEM_AUTO_REPO_CONTEXT"] = "0"
-    env["COGEM_SYMBOL_INDEX"] = "0"
-    env["COGEM_GIT_CONTEXT"] = "0"
-    env["COGEM_VECTOR_RAG"] = "0"
-    env["COGEM_VALIDATION_MAX_ATTEMPTS"] = "1"
+    env["CLOGEM_CODEX_CMD"] = str(bin_dir / codex_exec)
+    env["CLOGEM_GEMINI_CMD"] = str(bin_dir / gemini_exec)
+    env["CLOGEM_AUTO_PERMISSIONS"] = "yes"
+    env["CLOGEM_ALLOW_LOCAL_COMMANDS"] = "yes"
+    env["CLOGEM_STITCH"] = "0"
+    env["CLOGEM_AUTO_REPO_CONTEXT"] = "0"
+    env["CLOGEM_SYMBOL_INDEX"] = "0"
+    env["CLOGEM_GIT_CONTEXT"] = "0"
+    env["CLOGEM_VECTOR_RAG"] = "0"
+    env["CLOGEM_VALIDATION_MAX_ATTEMPTS"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
 
     return subprocess.run(
-        [sys.executable, "-m", "cogem.cli"],
+        [sys.executable, "-m", "clogem.cli"],
         input=stdin_text,
         capture_output=True,
         text=True,

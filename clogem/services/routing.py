@@ -48,7 +48,7 @@ def parse_build_or_chat(raw: str):
             rest = "\n".join(parts).strip()
             if not rest:
                 rest = (
-                    "I'm Cogem: when you describe something to build or code to change, "
+                    "I'm Clogem: when you describe something to build or code to change, "
                     "I'll run the full loop. What would you like to work on?"
                 )
             return "chat", rest
@@ -63,7 +63,7 @@ async def resolve_turn_mode(
     build_router_prompt: Any,
     run_codex: Any,
     runtime_stitch_capabilities_block: Any,
-    runtime_cogem_commands_capabilities_block: Any,
+    runtime_clogem_commands_capabilities_block: Any,
     router_hint: str,
     trace_doing: Any,
     trace_done: Any,
@@ -93,7 +93,7 @@ async def resolve_turn_mode(
                 task_clean,
                 mem_block
                 + runtime_stitch_capabilities_block()
-                + runtime_cogem_commands_capabilities_block(),
+                + runtime_clogem_commands_capabilities_block(),
                 router_hint,
             ),
             "Codex: routing (build vs conversation)...",
@@ -103,7 +103,7 @@ async def resolve_turn_mode(
                 "Routing failed; not guessing BUILD/CHAT. Fix the error below, then retry."
             )
             console.print()
-            _say(f"[cogem] ERROR: Codex routing exited with code {router_rc}.")
+            _say(f"[clogem] ERROR: Codex routing exited with code {router_rc}.")
             if (router_err or "").strip():
                 clip = (router_err or "").strip()[:1200]
                 if len((router_err or "").strip()) > 1200:
@@ -111,7 +111,7 @@ async def resolve_turn_mode(
                 console.print(Text(clip, style=LOG_ERR))
             console.print(
                 Text(
-                    "Hint: cogem runs `codex exec --skip-git-repo-check`. "
+                    "Hint: clogem runs `codex exec --skip-git-repo-check`. "
                     "If this persists, check `codex` on PATH and disk permissions.",
                     style=MUTED,
                 )
@@ -151,7 +151,7 @@ async def resolve_turn_mode(
                 "Prerequisite answer step failed; fix the error below, then retry or use /ask."
             )
             console.print()
-            _say(f"[cogem] ERROR: Codex exited with code {pr_rc}.")
+            _say(f"[clogem] ERROR: Codex exited with code {pr_rc}.")
             if (pr_err or "").strip():
                 clip = (pr_err or "").strip()[:1200]
                 if len((pr_err or "").strip()) > 1200:

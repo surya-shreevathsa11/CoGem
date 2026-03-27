@@ -17,7 +17,7 @@ repos:
 
       - id: compileall
         name: syntax check (compileall)
-        entry: python -c "import compileall, sys; ok = compileall.compile_dir('cogem', force=True, quiet=1) and compileall.compile_dir('tests', force=True, quiet=1); sys.exit(0 if ok else 1)"
+        entry: python -c "import compileall, sys; ok = compileall.compile_dir('clogem', force=True, quiet=1) and compileall.compile_dir('tests', force=True, quiet=1); sys.exit(0 if ok else 1)"
         language: system
         pass_filenames: false
         always_run: true

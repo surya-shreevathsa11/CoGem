@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cogem.git_context import build_recent_git_log_context
+from clogem.git_context import build_recent_git_log_context
 
 
 def test_git_context_contains_commit_messages(tmp_path: Path):

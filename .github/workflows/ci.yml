@@ -57,7 +57,7 @@ jobs:
           python - <<'PY'
           import compileall
           ok = True
-          ok = compileall.compile_dir("cogem", force=True, quiet=1) and ok
+          ok = compileall.compile_dir("clogem", force=True, quiet=1) and ok
           ok = compileall.compile_dir("tests", force=True, quiet=1) and ok
           if not ok:
               raise SystemExit(1)

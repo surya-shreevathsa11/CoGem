@@ -29,7 +29,7 @@ ALLOWED_EXECUTABLES = {
 
 
 def _allow_relaxed_policy() -> bool:
-    return (os.environ.get("COGEM_RUN_POLICY") or "").strip().lower() in (
+    return (os.environ.get("CLOGEM_RUN_POLICY") or "").strip().lower() in (
         "relaxed",
         "legacy",
     )

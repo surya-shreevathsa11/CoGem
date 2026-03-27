@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import types
 
-from cogem.services import pipeline
+from clogem.services import pipeline
 
 
 def test_copy_to_clipboard_empty_text_returns_false() -> None:

@@ -4,7 +4,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from cogem.validation import copy_git_tracked_repo_to_sandbox, git_tracked_files
+from clogem.validation import copy_git_tracked_repo_to_sandbox, git_tracked_files
 
 
 def _run(cmd, cwd):
