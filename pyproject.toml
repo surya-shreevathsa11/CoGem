@@ -37,3 +37,11 @@ clogem = "clogem.cli:main"
 [tool.setuptools]
 include-package-data = true
 
+# Only ship the `clogem` package. A sibling `unused/` directory at repo root
+# would otherwise be auto-discovered as a second top-level package and break
+# editable installs (`pipx install -e .`, `pip install -e .`).
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["clogem*"]
+exclude = ["unused*", "tests*", "venv*", ".venv*"]
+

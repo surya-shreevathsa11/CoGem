@@ -114,6 +114,11 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
             or os.environ.get("GOOGLE_API_KEY", "").strip()
         ):
             return False
+        try:
+            from google import genai  # noqa: F401
+            return True
+        except Exception:
+            return False
 
     def _claude_sdk_ready() -> bool:
         if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
@@ -123,22 +128,17 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
             return True
         except Exception:
             return False
-        try:
-            from google import genai  # noqa: F401
-            return True
-        except Exception:
-            return False
 
     sys.stdout.write("\n")
     sys.stdout.flush()
 
+    # ANSI Regular–style FIGlet spelling "CLOGEM" (Unicode block chars).
     logo = [
-        "██████╗  ██████╗  ██████╗  ███████╗ ███╗   ███╗",
-        "██╔═══╝ ██╔═══██╗ ██╔═══╝  ██╔════╝ ████╗ ████║",
-        "██║     ██║   ██║ ██║ ███╗ █████╗   ██╔████╔██║",
-        "██║     ██║   ██║ ██║  ██║ ██╔══╝   ██║╚██╔╝██║",
-        "╚██████╗╚██████╔╝ ╚██████╗ ███████╗ ██║ ╚═╝ ██║",
-        " ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝ ╚═╝     ╚═╝ ",
+        " ██████ ██       ██████   ██████  ███████ ███    ███",
+        "██      ██      ██    ██ ██       ██      ████  ████",
+        "██      ██      ██    ██ ██   ███ █████   ██ ████ ██",
+        "██      ██      ██    ██ ██    ██ ██      ██  ██  ██",
+        " ██████ ███████  ██████   ██████  ███████ ██      ██",
     ]
     for row in logo:
         _boot_type_line(row, 0.002, _BOOT_BLUSH)
