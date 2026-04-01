@@ -23,6 +23,10 @@ def _boot_type_line(text: str, delay: float = 0.008, color: str = _BOOT_SOFT) ->
     import sys
     import time
 
+    # In non-interactive contexts (tests, piped output), don't slow down output.
+    if not sys.stdout.isatty():
+        delay = 0.0
+
     for char in text:
         sys.stdout.write(f"{color}{char}{_BOOT_RESET}")
         sys.stdout.flush()
@@ -267,6 +271,8 @@ async def async_main():
         claude_generate_async,
         gemini_generate,
         gemini_generate_async,
+        gemini_generate_with_google_search,
+        gemini_generate_with_google_search_async,
         gemini_generate_with_image,
         gemini_generate_with_image_async,
         openai_generate,
@@ -275,6 +281,11 @@ async def async_main():
     from clogem.role_mapping import needed_providers, resolve_role_provider_map
     from clogem.services.commands import handle_pre_pipeline_command
     from clogem.services.pipeline import build_context_blocks, maybe_run_stitch_stage
+    from clogem.services.realtime_intent import (
+        build_realtime_gemini_prompt,
+        local_datetime_context_block,
+        needs_realtime_web_assist,
+    )
     from clogem.services.routing import parse_session_directive, resolve_turn_mode
     from clogem.visual_review import capture_frontend_screenshot
 
@@ -1982,6 +1993,68 @@ async def async_main():
         _record_tokens("gemini", combined)
         return (stdout or "").strip(), stderr or "", rc
 
+    async def run_gemini_grounded(prompt: str, status_msg: str) -> Tuple[str, str, int]:
+        """
+        Gemini + Google Search grounding (SDK only). Used for narrow real-time turns
+        (weather, headlines) — see needs_realtime_web_assist().
+        """
+        backend = (os.environ.get("CLOGEM_GEMINI_BACKEND", "auto").strip().lower() or "auto")
+        sdk_model = (
+            models.get("gemini")
+            or os.environ.get("CLOGEM_GEMINI_SDK_MODEL", "").strip()
+            or "gemini-2.5-flash"
+        )
+        timeout = max(_subprocess_timeout_sec() or 60, 120)
+
+        use_async = (
+            os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
+            not in ("0", "false", "no", "off", "disabled")
+        )
+
+        async def _run_sdk_async():
+            return await gemini_generate_with_google_search_async(
+                prompt, sdk_model, timeout_sec=timeout
+            )
+
+        def _run_sdk_sync():
+            return gemini_generate_with_google_search(
+                prompt, sdk_model, timeout_sec=timeout
+            )
+
+        if backend == "cli":
+            return await run_gemini(
+                prompt
+                + "\n\n(Note: Live web search requires the Gemini SDK; "
+                "set CLOGEM_GEMINI_BACKEND=auto or sdk, not cli.)",
+                status_msg,
+            )
+
+        if backend in ("auto", "sdk"):
+            try:
+                if use_async:
+                    if status_msg:
+                        r = await _run_with_ascii_progress_async(
+                            status_msg, _run_sdk_async
+                        )
+                    else:
+                        r = await _run_sdk_async()
+                else:
+                    r = (
+                        _run_with_ascii_progress(status_msg, _run_sdk_sync)
+                        if status_msg
+                        else _run_sdk_sync()
+                    )
+                if r.returncode == 0:
+                    _record_tokens("gemini", r.text or "")
+                    return (r.text or "").strip(), "", 0
+                if backend == "sdk":
+                    return "", r.error or "Gemini grounded call failed.", 1
+            except Exception as e:
+                if backend == "sdk":
+                    return "", str(e), 1
+
+        return "", "Gemini grounded call unavailable.", 1
+
     async def run_claude(prompt: str, status_msg: str) -> Tuple[str, str, int]:
         backend = (os.environ.get("CLOGEM_CLAUDE_BACKEND", "sdk").strip().lower() or "sdk")
         sdk_model = (
@@ -2135,6 +2208,80 @@ PERSIST note: <concise fact>
 If nothing to persist, omit PERSIST lines.
 
 User message:
+---
+__TASK__
+---
+"""
+
+    RESEARCH_MODE_PROMPT_WITH_SOURCES = """You are Clogem's /research assistant for scientific and academic research.
+
+Hard constraints (must follow):
+- Do NOT browse the web in this environment.
+- Do NOT guess. If you cannot verify a claim from the provided sources, say you cannot verify it.
+- Every non-trivial factual claim MUST have an inline citation to one of the provided sources (use [S1], [S2], etc.).
+- If sources are missing or insufficient, explicitly say so and stop rather than hallucinating.
+
+Allowed sources:
+- Only the content in "Provided sources" below (from @ mentions).
+
+Output format (strict):
+## Answer
+<only source-backed claims with citations, or a refusal due to insufficient sources>
+
+## What I verified (from sources)
+- <bullet points with citations>
+
+## What I could NOT verify
+- <bullet points; explain what source is needed>
+
+## Provided sources
+__SOURCES__
+
+User request:
+---
+__TASK__
+---
+"""
+
+    RESEARCH_WEB_PROMPT = """You are Clogem's /research assistant for scientific and academic research.
+
+You have Google Search grounding. Use it to find current, verifiable information (papers, institutions, standards, recent results). Prefer primary or authoritative sources when the question allows.
+
+Hard constraints:
+- Do NOT invent DOIs, paper titles, journal names, author lists, or study outcomes. If search does not support a claim, say you could not verify it.
+- Distinguish established consensus from single studies or speculation.
+- If evidence is thin, conflicting, or paywalled, say so clearly.
+- The user's local date/time is below — use it when interpreting "latest", "today", or "current".
+
+Local context:
+---
+__LOCAL__
+---
+
+User request:
+---
+__TASK__
+---
+
+Output format (strict):
+## Answer
+<synthesis; qualify uncertainty; do not fabricate citations>
+
+## What I verified (from search)
+- <bullet points>
+
+## What I could NOT verify or what remains uncertain
+- <bullet points>
+
+## Suggested follow-up (optional)
+- <queries, databases, or reading types for the user>
+"""
+
+    RESEARCH_ORCHESTRATOR_FALLBACK = """You are Clogem's /research assistant. Web search is unavailable in this call.
+
+Be conservative: do not invent citations or paper details. Give a short outline of what is generally known at a high level, label anything uncertain, and suggest concrete ways the user could verify (databases, search terms, primary literature).
+
+User request:
 ---
 __TASK__
 ---
@@ -3382,6 +3529,68 @@ No markdown, no other text."""
 
             mode_hint = CODEX_MODE_HINTS.get(session_directive or "", "")
 
+            # ---------- Weather / news / live facts: Gemini + Google Search (skip Codex router) ----------
+            _realtime_on = (
+                os.environ.get("CLOGEM_GEMINI_REALTIME", "1").strip().lower()
+                not in ("0", "false", "no", "off", "disabled")
+            )
+            if (
+                _realtime_on
+                and session_directive in (None, "ask")
+                and not attach_block
+                and needs_realtime_web_assist((task_clean or "").strip())
+            ):
+                trace_doing(
+                    "This looks like a live weather/news question — using Gemini with "
+                    "Google Search grounding (not the Codex router)."
+                )
+                local_block = local_datetime_context_block()
+                rt_prompt = build_realtime_gemini_prompt(
+                    local_block=local_block,
+                    user_question=(task_clean or "").strip(),
+                )
+                backend_g = (
+                    os.environ.get("CLOGEM_GEMINI_BACKEND", "auto").strip().lower()
+                    or "auto"
+                )
+                if backend_g == "cli":
+                    console.print(
+                        Text(
+                            "Tip: For live weather and news, use the Gemini SDK backend "
+                            "(CLOGEM_GEMINI_BACKEND=auto or sdk). CLI mode cannot run Google Search grounding.",
+                            style=MUTED,
+                        )
+                    )
+                    console.print()
+                rt_raw, rt_err, rt_rc = await run_gemini_grounded(
+                    rt_prompt,
+                    "Gemini: live web lookup...",
+                )
+                if rt_rc != 0:
+                    console.print()
+                    _say(
+                        f"[clogem] ERROR: Gemini live lookup exited with code {rt_rc}."
+                    )
+                    if (rt_err or "").strip():
+                        console.print(
+                            Text((rt_err or "").strip()[:1200], style=LOG_ERR)
+                        )
+                    console.print()
+                    _token_turn_footer()
+                    continue
+                chat_reply = (rt_raw or "").strip()
+                chat_reply, auto_persists = extract_persist_directives(chat_reply)
+                apply_persist_directives(memory, auto_persists)
+                trace_done("Gemini live web reply ready.")
+                live_reasoning_banner_chat(task or "(live web)")
+                section_rule("Reply (Gemini + web)")
+                console.print()
+                console.print(chat_reply or "(empty reply)")
+                console.print()
+                _token_turn_footer()
+                _say("[clogem] Turn finished. What would you like to do next?")
+                continue
+
             # ---------- /ask: conversational only (skip router + build pipeline) ----------
             if session_directive == "ask":
                 mem_ctx = mem_block.strip() if mem_block.strip() else "(none yet)"
@@ -3415,6 +3624,91 @@ No markdown, no other text."""
                 section_rule("Reply (/ask)")
                 console.print()
                 console.print(chat_reply or "(empty reply)")
+                console.print()
+                _token_turn_footer()
+                _say("[clogem] Turn finished. What would you like to do next?")
+                continue
+
+            # ---------- /research: academic research (skip router + build pipeline) ----------
+            if session_directive == "research":
+                research_task_body = (task_clean or "(no question)").strip()
+                sources = (attach_block or "").strip()
+
+                if sources:
+                    trace_doing(
+                        "/research with @ sources — answering from inlined files only "
+                        "(cite sources; no web)."
+                    )
+                    research_prompt = (
+                        RESEARCH_MODE_PROMPT_WITH_SOURCES.replace("__SOURCES__", sources)
+                        .replace("__TASK__", research_task_body)
+                    )
+                    research_raw, research_err, research_rc = await run_role(
+                        "orchestrator",
+                        research_prompt,
+                        "Orchestrator: /research (from @ sources)...",
+                    )
+                    err_label = "LLM"
+                else:
+                    trace_doing(
+                        "/research without @ — using Gemini + Google Search grounding."
+                    )
+                    local_block = local_datetime_context_block()
+                    research_prompt = (
+                        RESEARCH_WEB_PROMPT.replace("__LOCAL__", local_block)
+                        .replace("__TASK__", research_task_body)
+                    )
+                    research_raw, research_err, research_rc = await run_gemini_grounded(
+                        research_prompt,
+                        "Gemini: /research (web-grounded)...",
+                    )
+                    err_label = "Gemini (grounded)"
+                    if research_rc != 0:
+                        trace_done(
+                            "Grounded research unavailable; trying Gemini without grounding."
+                        )
+                        research_raw, research_err, research_rc = await run_gemini(
+                            research_prompt
+                            + "\n\n(Note: Google Search grounding was unavailable. "
+                            "Answer conservatively; do not invent citations.)",
+                            "Gemini: /research (best-effort)...",
+                        )
+                        err_label = "Gemini"
+                    if research_rc != 0:
+                        trace_done(
+                            "Gemini unavailable; using orchestrator with conservative instructions."
+                        )
+                        fb = RESEARCH_ORCHESTRATOR_FALLBACK.replace(
+                            "__TASK__", research_task_body
+                        )
+                        research_raw, research_err, research_rc = await run_role(
+                            "orchestrator",
+                            fb,
+                            "Orchestrator: /research (best-effort)...",
+                        )
+                        err_label = "LLM"
+
+                if research_rc != 0:
+                    console.print()
+                    _say(
+                        f"[clogem] ERROR: {err_label} exited with code {research_rc} for /research."
+                    )
+                    if (research_err or "").strip():
+                        console.print(
+                            Text((research_err or "").strip()[:800], style=LOG_ERR)
+                        )
+                    console.print()
+                    _token_turn_footer()
+                    continue
+
+                if sources:
+                    trace_done("Direct /research reply ready (from @ sources).")
+                else:
+                    trace_done("Direct /research reply ready (web-grounded or best-effort).")
+                live_reasoning_banner_chat(task or "/research")
+                section_rule("Reply (/research)")
+                console.print()
+                console.print((research_raw or "").strip() or "(empty reply)")
                 console.print()
                 _token_turn_footer()
                 _say("[clogem] Turn finished. What would you like to do next?")

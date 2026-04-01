@@ -26,6 +26,44 @@ This creates a self-improving coding workflow that works for:
 
 ---
 
+## How Codex, Gemini, and Claude work in Clogem
+
+Clogem is an **orchestrator**: it calls external models through **named roles**. You can change which **provider** (Codex / Gemini / Claude) handles each role; defaults favor **Codex for authoring** and **Gemini for independent review**, so the reviewer is never the same “voice” as the drafter.
+
+### Default role → provider map
+
+| Role | Default provider | Role in the app |
+|------|------------------|-----------------|
+| **orchestrator** | Codex | Turn routing (build vs chat), `/ask`-style chat, memory, and lightweight classifiers |
+| **planner** | Codex | Planning step before implementation when the pipeline runs |
+| **coder** | Codex | Draft code, apply diffs, improvement passes after review |
+| **reviewer** | Gemini | **Independent** review of generated code (security, design, consistency) |
+| **summariser** | Gemini | Short summaries of outcomes and diffs |
+
+**Claude** is **optional**. It is used only when you assign one or more roles to `claude` (for example `coder=claude`) via `--role-provider` or `CLOGEM_ROLE_PROVIDER_MAP`. Claude runs through the **Anthropic SDK** only (`ANTHROPIC_API_KEY`); there is no separate `claude` CLI inside Clogem.
+
+### How a typical **build** turn flows
+
+1. **Router** (usually the orchestrator on **Codex**) classifies the message as **BUILD** (run the pipeline) or **CHAT** (reply only).
+2. **Planner / coder** (**Codex** by default) produces or edits code.
+3. **Reviewer** (**Gemini**) audits the result without having authored it.
+4. **Coder** (**Codex**) applies improvements informed by review.
+5. **Summariser** (**Gemini**) condenses what changed.
+
+Pure chat turns skip the code pipeline when the router says **CHAT**. Special cases (e.g. **live weather/news**) can call **Gemini + Google Search grounding** on the SDK path only—see `CLOGEM_GEMINI_REALTIME` in this README.
+
+### Backends: CLI vs SDK
+
+| Provider | How Clogem talks to it |
+|----------|-------------------------|
+| **Codex** | `codex exec …` (**CLI**) and/or **OpenAI SDK** (`CLOGEM_CODEX_BACKEND=auto\|sdk\|cli`) |
+| **Gemini** | `gemini …` (**CLI**) and/or **Google GenAI SDK** (`CLOGEM_GEMINI_BACKEND=auto\|sdk\|cli`) — review, summary, optional grounded “today” answers |
+| **Claude** | **Anthropic SDK only** (`CLOGEM_CLAUDE_BACKEND=sdk`) |
+
+In **`auto`**, Clogem prefers the SDK when keys are available and falls back to the CLIs. Set keys as needed: `OPENAI_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`.
+
+---
+
 ## Why Use Clogem Over Standalone CLIs?
 
 Standalone CLIs like `codex` or `gemini` are great for quick, direct edits.  
@@ -105,18 +143,135 @@ ai_automation/
 
 ## Requirements
 
+| Component | Purpose |
+|-----------|---------|
+| **Python 3.10+** | Required by Clogem (`pyproject.toml`). Older system Pythons (e.g. macOS 3.9) are not enough. |
+| **pipx** | Installs the `clogem` command in an isolated environment (recommended). |
+| **Node.js + npm** | Installs the **Codex** and **Gemini** CLIs globally (`@openai/codex`, `@google/gemini-cli`). |
+| **Codex CLI** (`codex`) | OpenAI Codex — drafting and orchestration (`codex exec …`). |
+| **Gemini CLI** (`gemini`) | Google Gemini — review and summaries (`gemini -p …`). |
+| **API keys** (for SDK path) | `OPENAI_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`; optional `ANTHROPIC_API_KEY` for Claude roles. |
 
-| Component                 | Purpose                                                                                       |
-| ------------------------- | --------------------------------------------------------------------------------------------- |
-| **WSL** (Windows)         | Recommended environment on Windows; use a Linux distro (e.g. Ubuntu) for Node + Python + CLIs |
-| **Python 3**              | Runs `clogem` (via pipx)                                                                       |
-| **pipx**                  | Isolated install of the `clogem` command                                                       |
-| **Node.js + npm**         | Installs **Codex CLI** and **Gemini CLI** globally                                            |
-| **Codex CLI** (`codex`)   | OpenAI Codex — generation (`codex exec …`)                                                    |
-| **Gemini CLI** (`gemini`) | Google Gemini — review (`gemini -p …`)                                                        |
+On **Windows**, you can use **WSL** (below) or native installs if `python3`, `pipx`, `node`, `codex`, and `gemini` are on your `PATH`.
 
+---
 
-On Windows you can run `clogem` without WSL if `codex` and `gemini` are already on your `PATH` (same npm global install as below).
+## Full installation (end-to-end)
+
+Do these **in order** the first time you set up the machine.
+
+1. **Remove legacy pipx installs** if you used older names — see [Uninstalling old packages](#uninstalling-old-packages-devai-cogem-and-clogem).
+2. **Install Python 3.10+** and **pipx** — [macOS](#macos-macos--macbook), [WSL / Linux](#part-a--wsl-windows-subsystem-for-linux), or your OS package manager.
+3. **Clone** this repository and `cd` into the project root.
+4. **Install Clogem**: `pipx install -e . --force` (use `--python "$(command -v python3.12)"` on macOS if the default Python is too old).
+5. **Install Codex + Gemini CLIs** globally with npm (see [Part B](#part-b--nodejs-and-npm-for-codex--gemini-clis)).
+6. **Sign in or set keys**: run `codex` / `gemini` once per upstream docs, and export SDK keys if you use `auto`/`sdk` backends.
+7. **Verify**: run `clogem` — the boot sequence checks for Codex and Gemini availability.
+
+**Optional — development dependencies** (running tests from a clone): create a venv and run `pip install -e ".[dev]"` (see `pyproject.toml`). This is separate from the `pipx` install you use day-to-day.
+
+---
+
+## Uninstalling old packages (devai, cogem, and Clogem)
+
+Older iterations of this project used different **pipx** application names. Remove them so you do not have stale commands or wrong packages.
+
+```bash
+pipx list
+```
+
+Uninstall legacy names (ignore errors if a name was never installed):
+
+```bash
+pipx uninstall devai
+pipx uninstall cogem
+pipx uninstall clogem
+```
+
+Then install the current package from a fresh clone (see [Full installation](#full-installation-end-to-end)):
+
+```bash
+cd /path/to/Clogem
+pipx install -e . --force
+```
+
+**Virtualenv copy** (if you used `python -m venv .venv` and `pip install -e .` instead of pipx):
+
+```bash
+deactivate  # if the venv is active
+rm -rf .venv
+```
+
+**Global npm CLIs** (only if you want to remove Codex/Gemini CLIs entirely):
+
+```bash
+npm uninstall -g @openai/codex @google/gemini-cli
+```
+
+---
+
+## macOS (macOS / MacBook)
+
+Apple’s system Python is often **3.9.x**. Clogem needs **Python ≥ 3.10**, so install a newer Python and point **pipx** at it.
+
+### 1. Install tooling (Homebrew — recommended)
+
+Install [Homebrew](https://brew.sh) if you do not have it, then:
+
+```bash
+brew install python@3.12 pipx node
+pipx ensurepath
+```
+
+Close and reopen **Terminal** (or run `source ~/.zshrc`). Confirm:
+
+```bash
+python3.12 --version
+pipx --version
+node -v
+npm -v
+```
+
+### 2. Clone and install Clogem with pipx
+
+```bash
+cd ~/Projects   # or wherever you keep repos
+git clone https://github.com/surya-shreevathsa11/Clogem.git
+cd Clogem
+pipx install -e . --force --python "$(command -v python3.12)"
+```
+
+If `pipx` still picks the wrong interpreter, pass the full path from `brew --prefix python@3.12`, e.g. `$(brew --prefix python@3.12)/bin/python3.12`.
+
+### 3. Install Codex and Gemini CLIs
+
+```bash
+npm install -g @openai/codex @google/gemini-cli
+codex --version
+gemini --help
+```
+
+Complete **sign-in** for each tool the first time (or configure API keys per upstream docs).
+
+### 4. API keys for SDK mode (optional but common)
+
+Add to `~/.zshrc` (or `~/.bash_profile`):
+
+```bash
+export OPENAI_API_KEY="sk-..."
+export GEMINI_API_KEY="..."   # or GOOGLE_API_KEY
+# export ANTHROPIC_API_KEY="..."  # only if you map roles to Claude
+```
+
+Reload the shell: `source ~/.zshrc`.
+
+### 5. Troubleshooting on Mac
+
+| Problem | What to do |
+|---------|------------|
+| `requires-python` / version error during `pipx install` | Use `--python` with **python3.10+** (see step 2). |
+| `command not found: clogem` after pipx | Run `pipx ensurepath`, restart Terminal, check `echo $PATH`. |
+| Live weather/news not grounded | Use Gemini **SDK** (`CLOGEM_GEMINI_BACKEND=auto` or `sdk`), not `cli`; set `GEMINI_API_KEY`. |
 
 ---
 
@@ -249,30 +404,29 @@ Complete **Sign in with Google** or set `**GEMINI_API_KEY`** as described in the
 
 ---
 
-## Part E — This project (clogem)
+## Part E — This project (`clogem`)
+
+You should already have followed [Full installation](#full-installation-end-to-end) and [Uninstalling old packages](#uninstalling-old-packages-devai-cogem-and-clogem). This section is the short version.
 
 ### 1. Get the code
 
 ```bash
-cd ~
 git clone https://github.com/surya-shreevathsa11/Clogem.git
-cd <Clogem>
+cd Clogem
 ```
 
-Or clone your repo URL and `cd` into it.
+Use your fork URL if applicable.
 
-### 2. Install the `clogem` command
-
-If you still have the old `devai` package from an earlier install:
+### 2. Install the `clogem` command (pipx, from repo root)
 
 ```bash
-pipx uninstall devai
+pipx install -e . --force
 ```
 
-Then:
+On **macOS**, if the default Python is too old:
 
 ```bash
-pipx install -e .
+pipx install -e . --force --python "$(command -v python3.12)"
 ```
 
 ### 3. Run
@@ -281,7 +435,13 @@ pipx install -e .
 clogem
 ```
 
-On first launch, **clogem** creates a `**memory.json`** file next to the project (it is git-ignored). Each clone or machine gets its own file for saved stack notes and context—nothing personal is shipped with the repo.
+On first launch, Clogem creates **`memory.json`** in the project (git-ignored) for saved stack notes and context.
+
+### 4. Update after `git pull`
+
+```bash
+pipx install -e . --force
+```
 
 ---
 
@@ -363,7 +523,7 @@ It is a controlled development system where:
 
 ## Updating the tool
 
-After pulling changes:
+After `git pull`, reinstall the pipx app from the repo root (same as [Part E — step 4](#part-e--this-project-clogem)):
 
 ```bash
 pipx install -e . --force
@@ -424,6 +584,7 @@ Clogem supports SDK backends for OpenAI, Google GenAI, and Anthropic.
 
 - `CLOGEM_CODEX_BACKEND=auto|sdk|cli` (default `auto`)
 - `CLOGEM_GEMINI_BACKEND=auto|sdk|cli` (default `auto`)
+- `CLOGEM_GEMINI_REALTIME=1` (default on): questions that look like **live weather or news** are answered with **Gemini + Google Search grounding** (SDK path only), using your machine’s **local date/time** so “today” matches your clock. Set `0` to disable. Grounding needs a Gemini API key (`GEMINI_API_KEY` / `GOOGLE_API_KEY`) and billing per Google’s pricing; use `gemini-2.5-flash` or another [supported model](https://ai.google.dev/gemini-api/docs/google-search).
 - `CLOGEM_CLAUDE_BACKEND=sdk` (Claude is SDK-only)
 - `CLOGEM_CODEX_SDK_MODEL` (default `gpt-4.1-mini`)
 - `CLOGEM_GEMINI_SDK_MODEL` (default `gemini-2.5-flash`)
@@ -523,6 +684,7 @@ Prefix the **first line** of your message with one of these. They stack with `@`
 | `/debug …` | Debugging emphasis (root cause, repro, targeted fixes).                                     |
 | `/agent …` | Autonomous, multi-step coding style within the scoped task.                                 |
 | `/ask …`   | Pure Q&A (skips the router and the Codex+Gemini build loop for this turn).                  |
+| `/research …` | Research-style answer (skips the build loop). Without `@` files, uses **Gemini + Google Search grounding** when the SDK is available; with `@` paths, answers only from inlined sources (no web). |
 
 
 ### @ file and folder mentions
@@ -746,14 +908,18 @@ pip install ".[vector]"
 
 ## Quick reference (copy-paste)
 
+**Remove old pipx apps:** `pipx uninstall devai` · `pipx uninstall cogem` · `pipx uninstall clogem` (ignore errors if missing)  
+
+**macOS (Homebrew):** `brew install python@3.12 pipx node` · `pipx ensurepath` · `pipx install -e . --force --python "$(command -v python3.12)"`  
+
 **WSL (PowerShell, admin):** `wsl --install`  
 
 **WSL shell:** `sudo apt update && sudo apt upgrade -y`  
 
-**Python + pipx:** `sudo apt install -y python3 python3-pip pipx && pipx ensurepath`  
+**Python + pipx (WSL/Linux):** `sudo apt install -y python3 python3-pip pipx && pipx ensurepath`  
 
-**Codex CLI:** `npm install -g @openai/codex`  
+**Codex + Gemini CLIs:** `npm install -g @openai/codex @google/gemini-cli`  
 
-**Gemini CLI:** `npm install -g @google/gemini-cli`  
+**Clogem (any OS, from repo root):** `pipx install -e . --force` then `clogem`  
 
-**Clogem:** `pipx install -e .` then `clogem`  
+**Keys (SDK):** `export OPENAI_API_KEY=...` · `export GEMINI_API_KEY=...` (or `GOOGLE_API_KEY`)  

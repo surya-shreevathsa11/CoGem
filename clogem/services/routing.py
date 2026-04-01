@@ -5,13 +5,13 @@ from typing import Any, Dict, Optional, Tuple
 
 
 _SESSION_DIRECTIVE = re.compile(
-    r"^/(build|plan|debug|agent|ask)(?:\s+|$)(.*)$",
+    r"^/(build|plan|debug|agent|ask|research)(?:\s+|$)(.*)$",
     re.I | re.DOTALL,
 )
 
 
 def parse_session_directive(raw: str) -> Tuple[str, Optional[str]]:
-    """Strip one leading /build /plan /debug /agent /ask; return (rest, directive name or None)."""
+    """Strip one leading /build /plan /debug /agent /ask /research; return (rest, directive name or None)."""
     s = raw.strip()
     m = _SESSION_DIRECTIVE.match(s)
     if not m:

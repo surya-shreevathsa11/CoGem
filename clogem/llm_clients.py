@@ -71,6 +71,47 @@ async def gemini_generate_async(
     return await asyncio.to_thread(gemini_generate, prompt, model, timeout_sec)
 
 
+def gemini_generate_with_google_search(
+    prompt: str, model: str, timeout_sec: Optional[int] = None
+) -> LLMResult:
+    """
+    Gemini with Grounding with Google Search (live web). Requires google-genai SDK.
+    See: https://ai.google.dev/gemini-api/docs/google-search
+    """
+    try:
+        from google import genai
+        from google.genai import types
+    except Exception as e:
+        return LLMResult("", f"Google GenAI SDK import failed: {e}", 1)
+    try:
+        client = genai.Client()
+        grounding_tool = types.Tool(google_search=types.GoogleSearch())
+        timeout_ms = int((timeout_sec or 120) * 1000)
+        cfg = types.GenerateContentConfig(
+            tools=[grounding_tool],
+            http_options=types.HttpOptions(timeout=timeout_ms),
+        )
+        rsp = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=cfg,
+        )
+        text = (getattr(rsp, "text", None) or "").strip()
+        if not text:
+            text = str(rsp)
+        return LLMResult(text, "", 0)
+    except Exception as e:
+        return LLMResult("", str(e), 1)
+
+
+async def gemini_generate_with_google_search_async(
+    prompt: str, model: str, timeout_sec: Optional[int] = None
+) -> LLMResult:
+    return await asyncio.to_thread(
+        gemini_generate_with_google_search, prompt, model, timeout_sec
+    )
+
+
 def claude_generate(prompt: str, model: str, timeout_sec: Optional[int] = None) -> LLMResult:
     try:
         from anthropic import Anthropic

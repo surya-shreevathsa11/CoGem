@@ -103,6 +103,7 @@ def _run_cli(repo_root: Path, stdin_text: str, bin_dir: Path) -> subprocess.Comp
     env["CLOGEM_GIT_CONTEXT"] = "0"
     env["CLOGEM_VECTOR_RAG"] = "0"
     env["CLOGEM_VALIDATION_MAX_ATTEMPTS"] = "1"
+    env["CLOGEM_GEMINI_REALTIME"] = "0"
     env["PYTHONIOENCODING"] = "utf-8"
 
     return subprocess.run(
@@ -143,4 +144,37 @@ def test_cli_build_pipeline_mocked(tmp_path: Path):
     assert "Review (Gemini)" in out
     assert "Summary (Gemini)" in out
     assert "Goodbye." in out
+
+
+def test_cli_pdf_intent_does_not_trigger_build_pipeline(tmp_path: Path):
+    """
+    Regression: natural-language PDF requests should not enter the build pipeline
+    (which can cause unrelated artifact generation).
+    """
+    repo_root = Path(__file__).resolve().parents[1]
+    bin_dir = tmp_path / "bin"
+    _write_fake_clis(bin_dir)
+
+    proc = _run_cli(repo_root, "generate a pdf hello\n/exit\n", bin_dir)
+    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    assert proc.returncode == 0
+    assert "Initial output" not in out
+    assert "Review (" not in out
+    assert "Summary (" not in out
+
+
+def test_cli_research_without_attachments_skips_build_pipeline(tmp_path: Path):
+    """Regression: /research without @ still runs (web-grounded / best-effort) and skips build."""
+    repo_root = Path(__file__).resolve().parents[1]
+    bin_dir = tmp_path / "bin"
+    _write_fake_clis(bin_dir)
+
+    proc = _run_cli(repo_root, "/research what is CRISPR?\n/exit\n", bin_dir)
+    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    assert proc.returncode == 0
+    assert "Reply (/research)" in out
+    assert "can't verify research claims without sources" not in out.lower()
+    assert "Initial output" not in out
+    assert "Review (" not in out
+    assert "Summary (" not in out
 

@@ -11,6 +11,12 @@ def test_parse_session_directive_extracts_build() -> None:
     assert rest == "implement feature"
 
 
+def test_parse_session_directive_extracts_research() -> None:
+    rest, directive = parse_session_directive("/research what is CRISPR?")
+    assert directive == "research"
+    assert rest == "what is CRISPR?"
+
+
 def test_parse_build_or_chat_defaults_to_workflow() -> None:
     mode, reply = parse_build_or_chat("Please add logging")
     assert mode == "workflow"

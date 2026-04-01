@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import json
+import re
 from typing import Any, Dict, Tuple
 
 
@@ -22,6 +23,22 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
     LOG_ERR = ctx["LOG_ERR"]
     LOG_OK = ctx["LOG_OK"]
     section_rule = ctx["section_rule"]
+
+    # Guardrail: if the user asks for a PDF in natural language, prefer the
+    # explicit /pdf command instead of entering the build pipeline.
+    # This reduces misrouting/hallucinated "build a website" behavior.
+    if not task.lstrip().startswith("/"):
+        if re.match(r"(?is)^(generate|create|make)\s+(a\s+)?pdf\b", task.strip()):
+            console.print(
+                Text(
+                    "To generate a PDF, use the explicit command:\n"
+                    "  /pdf <text> [out.pdf]\n"
+                    "  /pdf @path/to/file.txt [out.pdf]",
+                    style=MUTED,
+                )
+            )
+            console.print()
+            return True, False
 
     if task.strip().lower() in ("/exit", "/quit"):
         console.print()
