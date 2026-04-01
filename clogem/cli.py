@@ -2628,6 +2628,7 @@ Return project edits as:
             "- `/agent`: autonomous multi-step coding within scope.\n"
             "- `/build`: force the full build pipeline this turn.\n"
             "- `/ask`: chat-only; no build pipeline this turn.\n"
+            "- `/research`: research-style answer (no build loop); web-grounded when no `@` files, file-grounded when you attach `@` sources.\n"
             "- `/pdf`: generate a PDF from provided text (plain text layout; requires `reportlab`).\n"
             "- `/repo/info`: show repo info (git status/branch/last commit).\n"
             "- `/test`: run detected tests (best-effort).\n"
@@ -2650,6 +2651,10 @@ Return project edits as:
         ("/debug", "Debugging & root-cause focus for this turn"),
         ("/agent", "Autonomous multi-step coding within your scope"),
         ("/ask", "Chat only — no Codex/Gemini build loop this turn"),
+        (
+            "/research",
+            "Research mode: web-grounded (no @) or source-only from @ files; no build loop",
+        ),
         ("/exit", "Exit clogem"),
         ("/pdf", "Generate a PDF from provided text (plain text layout)"),
         ("/codex/model", "Show or set Codex LLM (draft + improve)"),
@@ -3432,7 +3437,7 @@ No markdown, no other text."""
                 )
                 console.print(
                     Text(
-                        "Session: /build /plan /debug /agent /ask   "
+                        "Session: /build /plan /debug /agent /ask /research   "
                         "/codex/model <MODEL_ID|reset>   "
                         "/gemini/model <MODEL_ID|reset>   "
                         "/claude/model <MODEL_ID|reset>   "
