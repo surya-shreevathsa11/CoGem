@@ -70,13 +70,52 @@ def gemini_generate(prompt: str, model: str, timeout_sec: Optional[int] = None) 
 async def openai_generate_async(
     prompt: str, model: str, timeout_sec: Optional[int] = None
 ) -> LLMResult:
-    return await asyncio.to_thread(openai_generate, prompt, model, timeout_sec)
+    try:
+        from openai import AsyncOpenAI
+    except Exception as e:
+        return LLMResult("", f"OpenAI SDK import failed: {e}", 1)
+    try:
+        client = AsyncOpenAI()
+        rsp = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are a precise coding assistant."},
+                {"role": "user", "content": prompt},
+            ],
+            timeout=timeout_sec or 60,
+        )
+        text = ""
+        try:
+            text = (rsp.choices[0].message.content or "").strip()
+        except Exception:
+            text = ""
+        if not text:
+            text = str(rsp)
+        return LLMResult(text, "", 0)
+    except Exception as e:
+        return LLMResult("", str(e), 1)
 
 
 async def gemini_generate_async(
     prompt: str, model: str, timeout_sec: Optional[int] = None
 ) -> LLMResult:
-    return await asyncio.to_thread(gemini_generate, prompt, model, timeout_sec)
+    try:
+        from google import genai
+    except Exception as e:
+        return LLMResult("", f"Google GenAI SDK import failed: {e}", 1)
+    try:
+        client = genai.Client()
+        rsp = await client.aio.models.generate_content(
+            model=model,
+            contents=prompt,
+            config={"http_options": {"timeout": (timeout_sec or 60) * 1000}},
+        )
+        text = (getattr(rsp, "text", None) or "").strip()
+        if not text:
+            text = str(rsp)
+        return LLMResult(text, "", 0)
+    except Exception as e:
+        return LLMResult("", str(e), 1)
 
 
 def gemini_generate_with_google_search(
@@ -115,9 +154,30 @@ def gemini_generate_with_google_search(
 async def gemini_generate_with_google_search_async(
     prompt: str, model: str, timeout_sec: Optional[int] = None
 ) -> LLMResult:
-    return await asyncio.to_thread(
-        gemini_generate_with_google_search, prompt, model, timeout_sec
-    )
+    try:
+        from google import genai
+        from google.genai import types
+    except Exception as e:
+        return LLMResult("", f"Google GenAI SDK import failed: {e}", 1)
+    try:
+        client = genai.Client()
+        grounding_tool = types.Tool(google_search=types.GoogleSearch())
+        timeout_ms = int((timeout_sec or 120) * 1000)
+        cfg = types.GenerateContentConfig(
+            tools=[grounding_tool],
+            http_options=types.HttpOptions(timeout=timeout_ms),
+        )
+        rsp = await client.aio.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=cfg,
+        )
+        text = (getattr(rsp, "text", None) or "").strip()
+        if not text:
+            text = str(rsp)
+        return LLMResult(text, "", 0)
+    except Exception as e:
+        return LLMResult("", str(e), 1)
 
 
 def claude_generate(prompt: str, model: str, timeout_sec: Optional[int] = None) -> LLMResult:
@@ -207,7 +267,29 @@ async def gemini_generate_with_image_async(
     image_path: str,
     timeout_sec: Optional[int] = None,
 ) -> LLMResult:
-    return await asyncio.to_thread(
-        gemini_generate_with_image, prompt, model, image_path, timeout_sec
-    )
+    try:
+        from google import genai
+        from google.genai import types
+    except Exception as e:
+        return LLMResult("", f"Google GenAI SDK import failed: {e}", 1)
+    try:
+        with open(image_path, "rb") as f:
+            img = f.read()
+        client = genai.Client()
+        rsp = await client.aio.models.generate_content(
+            model=model,
+            contents=[
+                prompt,
+                types.Part.from_bytes(
+                    data=img, mime_type=_guess_mime_type_for_image_path(image_path)
+                ),
+            ],
+            config={"http_options": {"timeout": (timeout_sec or 60) * 1000}},
+        )
+        text = (getattr(rsp, "text", None) or "").strip()
+        if not text:
+            text = str(rsp)
+        return LLMResult(text, "", 0)
+    except Exception as e:
+        return LLMResult("", str(e), 1)
 
