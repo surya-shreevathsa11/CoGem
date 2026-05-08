@@ -1,5 +1,7 @@
 """Tests for Stitch frontend detection and prompt builder."""
 
+import time
+
 import pytest
 
 from clogem.stitch import (
@@ -9,6 +11,7 @@ from clogem.stitch import (
     should_skip_stitch_due_to_attachments,
 )
 from clogem.stitch.adapters import looks_like_ui_content, try_stitch_adapters
+from clogem.stitch.mcp_stdio import _read_one_message
 
 
 def test_detect_frontend_landing_page():
@@ -78,3 +81,15 @@ def test_build_stitch_prompt_style_override_present():
     p = build_stitch_prompt("Build a homepage using the Inter font and dark theme")
     assert "style override rule" in p.lower()
     assert "explicitly requested a style" in p.lower()
+
+
+def test_stitch_mcp_read_timeout_on_blocking_stream():
+    class _BlockingStream:
+        def read(self, _n):
+            time.sleep(0.2)
+            return b""
+
+    t0 = time.monotonic()
+    with pytest.raises(TimeoutError):
+        _read_one_message(_BlockingStream(), timeout_sec=0.05)
+    assert time.monotonic() - t0 < 0.2

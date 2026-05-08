@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import threading
 import time
+import queue
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -25,7 +26,7 @@ def _frame(body: bytes) -> bytes:
     return f"Content-Length: {len(body)}\r\n\r\n".encode("ascii") + body
 
 
-def _read_one_message(stream) -> Optional[Dict[str, Any]]:
+def _read_one_message_blocking(stream) -> Optional[Dict[str, Any]]:
     header = b""
     while True:
         chunk = stream.read(1)
@@ -44,6 +45,33 @@ def _read_one_message(stream) -> Optional[Dict[str, Any]]:
     if len(body) != n:
         return None
     return json.loads(body.decode("utf-8"))
+
+
+def _read_one_message(stream, timeout_sec: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """
+    Read one MCP message with an optional timeout.
+    Uses a worker thread so timeout can still fire if stream.read() blocks.
+    """
+    if timeout_sec is None:
+        return _read_one_message_blocking(stream)
+
+    q: "queue.Queue[Tuple[str, Any]]" = queue.Queue(maxsize=1)
+
+    def _worker() -> None:
+        try:
+            q.put(("ok", _read_one_message_blocking(stream)))
+        except Exception as e:  # noqa: BLE001
+            q.put(("err", e))
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    try:
+        kind, payload = q.get(timeout=max(0.0, float(timeout_sec)))
+    except queue.Empty as e:
+        raise TimeoutError("MCP read timeout") from e
+    if kind == "err":
+        raise payload
+    return payload
 
 
 def _write_message(proc: subprocess.Popen, obj: Dict[str, Any]) -> None:
@@ -144,7 +172,13 @@ def _initialize(proc: subprocess.Popen, timeout_sec: int) -> Tuple[bool, str]:
     init_id = next_id
     t0 = time.monotonic()
     while time.monotonic() - t0 < timeout_sec:
-        msg = _read_one_message(proc.stdout)
+        remaining = timeout_sec - (time.monotonic() - t0)
+        if remaining <= 0:
+            break
+        try:
+            msg = _read_one_message(proc.stdout, timeout_sec=remaining)
+        except TimeoutError:
+            break
         if msg is None:
             break
         if msg.get("id") == init_id and "result" in msg:
@@ -162,7 +196,13 @@ def _call_jsonrpc(proc: subprocess.Popen, method: str, params: Dict[str, Any], t
     _write_message(proc, {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
     t0 = time.monotonic()
     while time.monotonic() - t0 < timeout_sec:
-        msg = _read_one_message(proc.stdout)
+        remaining = timeout_sec - (time.monotonic() - t0)
+        if remaining <= 0:
+            break
+        try:
+            msg = _read_one_message(proc.stdout, timeout_sec=remaining)
+        except TimeoutError:
+            break
         if msg is None:
             break
         if msg.get("method"):

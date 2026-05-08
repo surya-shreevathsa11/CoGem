@@ -1,6 +1,9 @@
 import json
+import time
 
-from clogem.mcp_plugins import load_registry
+import pytest
+
+from clogem.mcp_plugins import _read_one_message, load_registry
 
 
 def test_mcp_registry_from_json_env(monkeypatch):
@@ -24,4 +27,16 @@ def test_mcp_builtin_alias_from_env(monkeypatch):
     assert "jira" in reg
     assert reg["jira"].cmd == "npx"
     assert "jira-mcp" in " ".join(reg["jira"].args)
+
+
+def test_mcp_read_one_message_timeout_on_blocking_stream():
+    class _BlockingStream:
+        def read(self, _n):
+            time.sleep(0.2)
+            return b""
+
+    t0 = time.monotonic()
+    with pytest.raises(TimeoutError):
+        _read_one_message(_BlockingStream(), timeout_sec=0.05)
+    assert time.monotonic() - t0 < 0.2
 
