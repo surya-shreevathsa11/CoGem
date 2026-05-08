@@ -1591,9 +1591,11 @@ async def async_main():
         timeout = _subprocess_timeout_sec() or 60
 
         use_async = settings.async_llm
-        codex_cli_available = _cmd_exists(
+        codex_cmd_parts = (
             _shlex_split_cmd(os.environ.get("CLOGEM_CODEX_CMD", "").strip()) or ["codex"]
         )
+        codex_exe = codex_cmd_parts[0] if codex_cmd_parts else "codex"
+        codex_cli_available = bool(shutil.which(codex_exe) or os.path.isfile(codex_exe))
 
         async def _run_sdk_async():
             return await openai_generate_async(prompt, sdk_model, timeout_sec=timeout)
