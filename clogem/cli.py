@@ -906,13 +906,20 @@ async def async_main():
         to = _subprocess_timeout_sec()
         exe_name = os.path.basename(cmd[0]).lower() if cmd else ""
         is_gemini_cli = "gemini" in exe_name
+        is_codex_cli = "codex" in exe_name
 
         async def _run_async():
             kw = {"capture_output": True, "text": True}
             if to is not None:
                 # Gemini CLI requests (especially research-style prompts) can
                 # legitimately take longer than the default subprocess timeout.
-                kw["timeout"] = max(to, 120) if is_gemini_cli else to
+                # Codex build/generation turns can also exceed 60s for larger tasks.
+                if is_gemini_cli:
+                    kw["timeout"] = max(to, 120)
+                elif is_codex_cli:
+                    kw["timeout"] = max(to, 180)
+                else:
+                    kw["timeout"] = to
             if is_gemini_cli:
                 env = os.environ.copy()
                 env.setdefault("GEMINI_CLI_TRUST_WORKSPACE", "true")
