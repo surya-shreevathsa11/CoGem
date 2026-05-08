@@ -888,7 +888,9 @@ async def async_main():
         async def _run_async():
             kw = {"capture_output": True, "text": True}
             if to is not None:
-                kw["timeout"] = to
+                # Gemini CLI requests (especially research-style prompts) can
+                # legitimately take longer than the default subprocess timeout.
+                kw["timeout"] = max(to, 120) if is_gemini_cli else to
             if is_gemini_cli:
                 env = os.environ.copy()
                 env.setdefault("GEMINI_CLI_TRUST_WORKSPACE", "true")
@@ -896,11 +898,20 @@ async def async_main():
             try:
                 return await asyncio.to_thread(subprocess.run, cmd, **kw)
             except subprocess.TimeoutExpired:
-                _say(
-                    f"[clogem] ERROR: subprocess timed out after {to}s "
-                    f"(set CLOGEM_SUBPROCESS_TIMEOUT_SEC or fix the CLI hang)."
+                timeout_used = kw.get("timeout", to)
+                msg = (
+                    f"subprocess timed out after {timeout_used}s "
+                    f"(set CLOGEM_SUBPROCESS_TIMEOUT_SEC to adjust)"
                 )
-                raise
+                _say(f"[clogem] ERROR: {msg}.")
+                # Return a non-zero result instead of raising so callers can
+                # gracefully fallback (e.g., /research -> orchestrator).
+                return subprocess.CompletedProcess(
+                    cmd,
+                    124,
+                    stdout="",
+                    stderr=msg,
+                )
 
         if status_msg:
             result = await _run_with_ascii_progress_async(status_msg, _run_async)
