@@ -8,6 +8,7 @@ import subprocess
 import sys
 from typing import Any, Dict, List, Set, Tuple
 
+from clogem.config import Settings
 from clogem.graph import build_symbol_dependency_context_from_source_files
 from clogem.logging_utils import get_logger
 from clogem.repo_awareness import AutoRepoContextConfig, auto_repo_context_block_for_task
@@ -201,6 +202,8 @@ def build_context_blocks(
     mention_roots_list: Any,
     path_allowed_for_mention: Any,
 ) -> Tuple[str, str]:
+    settings = Settings.from_env()
+
     def _format_rag_rows(rows: List[dict], max_chars: int) -> str:
         parts: List[str] = []
         total = 0
@@ -222,21 +225,15 @@ def build_context_blocks(
             total += len(block)
         return "\n".join(parts).strip()
 
-    auto_repo_context_on = (
-        os.environ.get("CLOGEM_AUTO_REPO_CONTEXT", "1").strip().lower()
-        not in ("0", "false", "no", "off", "disabled")
-    )
-    auto_repo_max_chars = int(os.environ.get("CLOGEM_AUTO_REPO_CONTEXT_MAX_CHARS", "8000"))
-    auto_repo_max_files = int(os.environ.get("CLOGEM_AUTO_REPO_CONTEXT_MAX_FILES", "6"))
-    auto_repo_max_depth = int(os.environ.get("CLOGEM_AUTO_REPO_CONTEXT_MAX_DEPTH", "2"))
+    auto_repo_context_on = settings.auto_repo_context
+    auto_repo_max_chars = settings.auto_repo_context_max_chars
+    auto_repo_max_files = settings.auto_repo_context_max_files
+    auto_repo_max_depth = settings.auto_repo_context_max_depth
 
     auto_context_block = ""
     if auto_repo_context_on:
         try:
-            vector_rag_on = (
-                os.environ.get("CLOGEM_VECTOR_RAG", "0").strip().lower()
-                not in ("0", "false", "no", "off", "disabled")
-            )
+            vector_rag_on = settings.vector_rag
             if vector_rag_on:
                 try:
                     from clogem.vector_index import (
@@ -245,15 +242,10 @@ def build_context_blocks(
                     )
                     vector_cfg = VectorIndexConfig(
                         enabled=True,
-                        rebuild=bool(
-                            os.environ.get("CLOGEM_VECTOR_REBUILD", "0").strip().lower()
-                            in ("1", "true", "yes", "on")
-                        ),
-                        top_k=int(os.environ.get("CLOGEM_VECTOR_TOP_K", "8")),
+                        rebuild=settings.vector_rebuild,
+                        top_k=settings.vector_top_k,
                         max_context_chars=auto_repo_max_chars,
-                        max_chunk_chars=int(
-                            os.environ.get("CLOGEM_VECTOR_CHUNK_CHARS", "2500")
-                        ),
+                        max_chunk_chars=settings.vector_chunk_chars,
                     )
                     rag_rows = semantic_search_repo(
                         repo_root=repo_root,
@@ -263,10 +255,7 @@ def build_context_blocks(
                     auto_context_block = _format_rag_rows(
                         rag_rows, max_chars=auto_repo_max_chars
                     )
-                    sym_rag_on = (
-                        os.environ.get("CLOGEM_SYM_RAG", "1").strip().lower()
-                        not in ("0", "false", "no", "off", "disabled")
-                    )
+                    sym_rag_on = settings.sym_rag
                     if sym_rag_on and rag_rows:
                         rag_chunks = [
                             (r.get("text") or "").strip()
@@ -276,12 +265,8 @@ def build_context_blocks(
                         sym_block = expand_rag_context_with_symbols(
                             rag_chunks,
                             repo_root=repo_root,
-                            max_symbols=int(
-                                os.environ.get("CLOGEM_SYM_RAG_MAX_SYMBOLS", "12")
-                            ),
-                            max_chars=int(
-                                os.environ.get("CLOGEM_SYM_RAG_MAX_CHARS", "3500")
-                            ),
+                            max_symbols=settings.sym_rag_max_symbols,
+                            max_chars=settings.sym_rag_max_chars,
                         )
                         if sym_block:
                             auto_context_block = (
@@ -306,17 +291,11 @@ def build_context_blocks(
             logger.debug("Auto repo context build failed", exc_info=True)
             auto_context_block = ""
 
-    symbol_dep_context_on = (
-        os.environ.get("CLOGEM_SYMBOL_DEP_CONTEXT", "1").strip().lower()
-        not in ("0", "false", "no", "off", "disabled")
-    )
+    symbol_dep_context_on = settings.symbol_dep_context
     symbol_dep_context_block = ""
     if symbol_dep_context_on:
         try:
-            symbol_index_enabled = (
-                os.environ.get("CLOGEM_SYMBOL_INDEX", "1").strip().lower()
-                not in ("0", "false", "no", "off", "disabled")
-            )
+            symbol_index_enabled = settings.symbol_index
             if symbol_index_enabled:
                 from clogem.symbols import SymbolIndex
 
@@ -352,12 +331,8 @@ def build_context_blocks(
                         repo_root=repo_root,
                         source_files=source_files,
                         symbol_index=idx,
-                        max_symbols=int(
-                            os.environ.get("CLOGEM_SYMBOL_DEP_MAX_SYMBOLS", "20")
-                        ),
-                        max_chars=int(
-                            os.environ.get("CLOGEM_SYMBOL_DEP_MAX_CHARS", "4000")
-                        ),
+                        max_symbols=settings.symbol_dep_max_symbols,
+                        max_chars=settings.symbol_dep_max_chars,
                     )
         except Exception:
             logger.debug("Symbol dependency context build failed", exc_info=True)

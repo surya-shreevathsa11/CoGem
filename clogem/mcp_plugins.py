@@ -12,6 +12,8 @@ import queue
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+from clogem.config import Settings
+
 
 @dataclass
 class MCPPluginSpec:
@@ -81,7 +83,8 @@ def _write_message(proc: subprocess.Popen, obj: Dict[str, Any]) -> None:
 
 
 def _load_specs_from_env() -> Dict[str, MCPPluginSpec]:
-    raw = (os.environ.get("CLOGEM_MCP_PLUGINS_JSON") or "").strip()
+    settings = Settings.from_env()
+    raw = settings.mcp_plugins_json
     if not raw:
         return {}
     try:
@@ -115,6 +118,7 @@ def _load_builtin_specs() -> Dict[str, MCPPluginSpec]:
         "datadog": ("CLOGEM_MCP_DATADOG_CMD", "CLOGEM_MCP_DATADOG_ARGS"),
         "dbschema": ("CLOGEM_MCP_DBSCHEMA_CMD", "CLOGEM_MCP_DBSCHEMA_ARGS"),
     }
+    settings = Settings.from_env()
     out: Dict[str, MCPPluginSpec] = {}
     for name, (k_cmd, k_args) in builtins.items():
         cmd = (os.environ.get(k_cmd) or "").strip()
@@ -122,7 +126,7 @@ def _load_builtin_specs() -> Dict[str, MCPPluginSpec]:
             continue
         args_raw = (os.environ.get(k_args) or "").strip()
         args = shlex.split(args_raw, posix=os.name != "nt") if args_raw else []
-        timeout = max(20, int((os.environ.get("CLOGEM_MCP_TIMEOUT_SEC") or "60").strip() or "60"))
+        timeout = max(20, int(settings.mcp_timeout_sec))
         out[name] = MCPPluginSpec(name=name, cmd=cmd, args=args, env={}, timeout_sec=timeout)
     return out
 

@@ -36,6 +36,8 @@ Use these at the start of your message to control how that turn is handled:
 
 If you map a role to `claude` and `ANTHROPIC_API_KEY` is missing, Clogem prompts you to enter it for the current session.
 
+- `/config`: show parsed effective runtime settings for debugging
+
 ## Repo and local execution commands
 
 - `/repo/info`: show git root/branch/last commit/status

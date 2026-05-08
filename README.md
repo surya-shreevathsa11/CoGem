@@ -631,6 +631,7 @@ While Clogem is running, you can change models without restarting:
 | `/claude/model reset`                      | Restore Claude model from `--claude-model` / `CLOGEM_CLAUDE_MODEL`             |
 | `/roles`                                   | Show active role-to-provider mapping                                           |
 | `/roles/<role>/<provider>`                 | Set role provider in-session (example: `/roles/orchestrator/claude`)          |
+| `/config`                                  | Show effective runtime settings (parsed config snapshot)                       |
 | `/repo/info`                               | Show repo info (git root, branch, last commit, status)                        |
 | `/test`                                    | Run project tests (best-effort; Python or Node)                               |
 | `/lint`                                    | Run project lint (best-effort; Python or Node)                                |

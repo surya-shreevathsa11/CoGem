@@ -197,6 +197,23 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         console.print()
         return True, False
 
+    if task.strip().lower() == "/config":
+        settings = ctx.get("settings")
+        console.print()
+        section_rule("Effective config")
+        console.print()
+        if settings is None:
+            console.print(Text("Settings are unavailable in this session.", style=LOG_WARN))
+            console.print()
+            return True, False
+        try:
+            payload = settings.as_dict() if hasattr(settings, "as_dict") else dict(settings)
+        except Exception:
+            payload = {"error": "Could not serialize settings"}
+        console.print(json.dumps(payload, ensure_ascii=False, indent=2))
+        console.print()
+        return True, False
+
     if task.strip().lower().startswith("/roles/"):
         role_provider_map = ctx.get("role_provider_map", {})
         parts = [p.strip().lower() for p in task.strip().split("/") if p.strip()]

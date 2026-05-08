@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import List
 
 from clogem import artifacts as artifact_helpers
+from clogem.config import Settings
 from clogem.logging_utils import get_logger
 from clogem import prompts as prompt_defs
 from clogem.memory import MemoryStore
@@ -162,6 +163,7 @@ async def async_main():
     _codex_model = (_args.codex_model or os.environ.get("CLOGEM_CODEX_MODEL") or "").strip() or None
     _gemini_model = (_args.gemini_model or os.environ.get("CLOGEM_GEMINI_MODEL") or "").strip() or None
     _claude_model = (_args.claude_model or os.environ.get("CLOGEM_CLAUDE_MODEL") or "").strip() or None
+    settings = Settings.from_env()
     role_provider_map = resolve_role_provider_map(
         env_map_raw=os.environ.get("CLOGEM_ROLE_PROVIDER_MAP", ""),
         cli_pairs=list(_args.role_provider or []),
@@ -171,14 +173,8 @@ async def async_main():
         not in ("0", "false", "no", "off", "disabled")
     )
 
-    validation_docker_requested = bool(_args.validation_docker) or (
-        os.environ.get("CLOGEM_VALIDATION_DOCKER", "").strip().lower()
-        in ("1", "true", "yes", "on")
-    )
-    require_docker_for_validation = (
-        os.environ.get("CLOGEM_STRICT_SANDBOX", "").strip().lower()
-        in ("1", "true", "yes", "on")
-    )
+    validation_docker_requested = bool(_args.validation_docker) or settings.validation_docker
+    require_docker_for_validation = settings.strict_sandbox
 
     if not await asyncio.to_thread(boot_sequence, needed_providers(role_provider_map)):
         raise SystemExit(1)
@@ -684,13 +680,7 @@ async def async_main():
             )
 
     def _subprocess_timeout_sec() -> Optional[int]:
-        raw = os.environ.get("CLOGEM_SUBPROCESS_TIMEOUT_SEC", "").strip()
-        if not raw:
-            return None
-        try:
-            return max(1, int(raw))
-        except ValueError:
-            return None
+        return settings.subprocess_timeout_sec
 
     def _task_preview(task: str, max_len: int = 90) -> str:
         preview = re.sub(r"\s+", " ", task.strip())
@@ -1583,7 +1573,7 @@ async def async_main():
             raise
 
     async def run_codex(prompt: str, status_msg: str) -> Tuple[str, str, int]:
-        backend = (os.environ.get("CLOGEM_CODEX_BACKEND", "auto").strip().lower() or "auto")
+        backend = settings.codex_backend
         sdk_model = (
             models.get("codex")
             or os.environ.get("CLOGEM_CODEX_SDK_MODEL", "").strip()
@@ -1591,10 +1581,7 @@ async def async_main():
         )
         timeout = _subprocess_timeout_sec() or 60
 
-        use_async = (
-            os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
-            not in ("0", "false", "no", "off", "disabled")
-        )
+        use_async = settings.async_llm
 
         async def _run_sdk_async():
             return await openai_generate_async(prompt, sdk_model, timeout_sec=timeout)
@@ -1632,7 +1619,7 @@ async def async_main():
         return stdout or "", stderr or "", rc
 
     async def run_gemini(prompt: str, status_msg: str) -> Tuple[str, str, int]:
-        backend = (os.environ.get("CLOGEM_GEMINI_BACKEND", "auto").strip().lower() or "auto")
+        backend = settings.gemini_backend
         sdk_model = (
             models.get("gemini")
             or os.environ.get("CLOGEM_GEMINI_SDK_MODEL", "").strip()
@@ -1640,10 +1627,7 @@ async def async_main():
         )
         timeout = _subprocess_timeout_sec() or 60
 
-        use_async = (
-            os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
-            not in ("0", "false", "no", "off", "disabled")
-        )
+        use_async = settings.async_llm
 
         async def _run_sdk_async():
             return await gemini_generate_async(prompt, sdk_model, timeout_sec=timeout)
@@ -1685,7 +1669,7 @@ async def async_main():
         Gemini + Google Search grounding (SDK only). Used for narrow real-time turns
         (weather, headlines) — see needs_realtime_web_assist().
         """
-        backend = (os.environ.get("CLOGEM_GEMINI_BACKEND", "auto").strip().lower() or "auto")
+        backend = settings.gemini_backend
         sdk_model = (
             models.get("gemini")
             or os.environ.get("CLOGEM_GEMINI_SDK_MODEL", "").strip()
@@ -1693,10 +1677,7 @@ async def async_main():
         )
         timeout = max(_subprocess_timeout_sec() or 60, 120)
 
-        use_async = (
-            os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
-            not in ("0", "false", "no", "off", "disabled")
-        )
+        use_async = settings.async_llm
 
         async def _run_sdk_async():
             return await gemini_generate_with_google_search_async(
@@ -1743,17 +1724,14 @@ async def async_main():
         return "", "Gemini grounded call unavailable.", 1
 
     async def run_claude(prompt: str, status_msg: str) -> Tuple[str, str, int]:
-        backend = (os.environ.get("CLOGEM_CLAUDE_BACKEND", "sdk").strip().lower() or "sdk")
+        backend = settings.claude_backend
         sdk_model = (
             models.get("claude")
             or os.environ.get("CLOGEM_CLAUDE_SDK_MODEL", "").strip()
             or "claude-sonnet-4-6"
         )
         timeout = _subprocess_timeout_sec() or 60
-        use_async = (
-            os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
-            not in ("0", "false", "no", "off", "disabled")
-        )
+        use_async = settings.async_llm
 
         async def _run_sdk_async():
             return await claude_generate_async(prompt, sdk_model, timeout_sec=timeout)
@@ -1818,22 +1796,13 @@ async def async_main():
         return prompt_defs.build_router_prompt(task, mem_block, router_hint)
 
     async def classify_intent_secondary(task_text: str, _mem_block: str) -> Optional[str]:
-        enabled = (
-            os.environ.get("CLOGEM_SECONDARY_INTENT_LLM", "1").strip().lower()
-            not in ("0", "false", "no", "off", "disabled")
-        )
+        enabled = settings.secondary_intent_llm
         if not enabled:
             return None
-        model = (
-            os.environ.get("CLOGEM_ROUTER_CLASSIFIER_MODEL", "").strip()
-            or "gemini-2.5-flash-lite"
-        )
+        model = settings.router_classifier_model
         timeout = _subprocess_timeout_sec() or 30
         prompt = ROUTER_SECONDARY_INTENT_PROMPT.replace("__TASK__", task_text or "")
-        use_async = (
-            os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
-            not in ("0", "false", "no", "off", "disabled")
-        )
+        use_async = settings.async_llm
         if use_async:
             r = await gemini_generate_async(prompt, model, timeout_sec=timeout)
         else:
@@ -2081,6 +2050,7 @@ Return project edits as:
         ("/gemini/model", "Show or set Gemini LLM (review + summary)"),
         ("/claude/model", "Show or set Claude LLM (SDK only)"),
         ("/roles", "Show active role->provider mapping"),
+        ("/config", "Show effective runtime config values"),
         ("/roles/<role>/<provider>", "Set role provider inline (e.g. /roles/orchestrator/claude)"),
         ("/repo/info", "Show repo info (git status, branch, last commit)"),
         ("/test", "Run project tests (best-effort; Python or Node)"),
@@ -2793,7 +2763,7 @@ Return project edits as:
                         "/codex/model <MODEL_ID|reset>   "
                         "/gemini/model <MODEL_ID|reset>   "
                         "/claude/model <MODEL_ID|reset>   "
-                        "/roles   /roles/<role>/<provider>   "
+                        "/roles   /roles/<role>/<provider>   /config   "
                         "/repo/info /test /lint   "
                         "/run <cmd>   "
                         "/github/info <url|owner/repo>   "
@@ -2843,6 +2813,7 @@ Return project edits as:
                     "_gemini_model": _gemini_model,
                     "_claude_model": _claude_model,
                     "role_provider_map": role_provider_map,
+                    "settings": settings,
                     "_repo_root": _repo_root,
                     "_select_test_cmd": _select_test_cmd,
                     "_select_lint_cmd": _select_lint_cmd,

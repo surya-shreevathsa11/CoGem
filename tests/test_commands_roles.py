@@ -26,6 +26,7 @@ def _ctx(console: _FakeConsole, role_provider_map: dict[str, str]):
         "LOG_OK": "ok",
         "section_rule": lambda *_: None,
         "role_provider_map": role_provider_map,
+        "settings": None,
     }
 
 
@@ -73,3 +74,18 @@ def test_roles_subcommand_rejects_unknown_role():
     assert should_exit is False
     assert role_map["coder"] == "codex"
     assert "Unknown role." in "\n".join(console.lines)
+
+
+def test_config_command_prints_settings_json():
+    class _Settings:
+        def as_dict(self):
+            return {"async_llm": True, "mcp_timeout_sec": 60}
+
+    console = _FakeConsole()
+    ctx = _ctx(console, {"coder": "codex"})
+    ctx["settings"] = _Settings()
+    handled, should_exit = handle_pre_pipeline_command("/config", ctx)
+    assert handled is True
+    assert should_exit is False
+    joined = "\n".join(console.lines)
+    assert "async_llm" in joined
