@@ -3246,14 +3246,23 @@ Return project edits as:
             if mode == "workflow":
                 try:
                     arch_prompt = ARCHITECT_SUBTASK_PROMPT.replace("__TASK__", task_clean or "")
-                    arch_model = os.environ.get("CLOGEM_ARCHITECT_MODEL", "").strip() or "gemini-2.5-pro"
-                    arch_res = await gemini_generate_async(
-                        arch_prompt,
-                        arch_model,
-                        timeout_sec=_subprocess_timeout_sec() or 90,
+                    arch_model = (
+                        os.environ.get("CLOGEM_ARCHITECT_MODEL", "").strip()
+                        or "gemini-2.5-pro"
                     )
-                    if arch_res.returncode == 0:
-                        architect_subtasks = _parse_subtasks_json(arch_res.text or "")
+                    prev_model = models.get("gemini")
+                    models["gemini"] = arch_model
+                    try:
+                        arch_out, _arch_err, arch_rc = await run_gemini(
+                            arch_prompt, "Architect: planning parallel subtasks..."
+                        )
+                    finally:
+                        if prev_model:
+                            models["gemini"] = prev_model
+                        else:
+                            models.pop("gemini", None)
+                    if arch_rc == 0:
+                        architect_subtasks = _parse_subtasks_json(arch_out or "")
                 except Exception:
                     logger.debug("Architect subtask generation failed", exc_info=True)
                     architect_subtasks = []
@@ -3279,15 +3288,24 @@ Return project edits as:
                     _TEAM_STATUS[st.id] = st.status
                 _render_team_status_board()
                 joined = "\n\n".join(team_outputs).strip()
-                integ_model = os.environ.get("CLOGEM_INTEGRATOR_MODEL", "").strip() or "gemini-2.5-pro"
-                integ_prompt = INTEGRATION_REVIEW_PROMPT.replace("__OUTPUTS__", joined[:50000])
-                integ_res = await gemini_generate_async(
-                    integ_prompt,
-                    integ_model,
-                    timeout_sec=_subprocess_timeout_sec() or 120,
+                integ_model = (
+                    os.environ.get("CLOGEM_INTEGRATOR_MODEL", "").strip()
+                    or "gemini-2.5-pro"
                 )
-                if integ_res.returncode == 0 and (integ_res.text or "").strip():
-                    parallel_raw = (integ_res.text or "").strip()
+                integ_prompt = INTEGRATION_REVIEW_PROMPT.replace("__OUTPUTS__", joined[:50000])
+                prev_model = models.get("gemini")
+                models["gemini"] = integ_model
+                try:
+                    integ_out, _integ_err, integ_rc = await run_gemini(
+                        integ_prompt, "Integrator: merging team outputs..."
+                    )
+                finally:
+                    if prev_model:
+                        models["gemini"] = prev_model
+                    else:
+                        models.pop("gemini", None)
+                if integ_rc == 0 and (integ_out or "").strip():
+                    parallel_raw = (integ_out or "").strip()
                     trace_done("Integration review produced merged project edits.")
                 else:
                     trace_done("Integration review unavailable; using concatenated team outputs.")
