@@ -1591,6 +1591,9 @@ async def async_main():
         timeout = _subprocess_timeout_sec() or 60
 
         use_async = settings.async_llm
+        codex_cli_available = _cmd_exists(
+            _shlex_split_cmd(os.environ.get("CLOGEM_CODEX_CMD", "").strip()) or ["codex"]
+        )
 
         async def _run_sdk_async():
             return await openai_generate_async(prompt, sdk_model, timeout_sec=timeout)
@@ -1598,7 +1601,12 @@ async def async_main():
         def _run_sdk_sync():
             return openai_generate(prompt, sdk_model, timeout_sec=timeout)
 
-        if backend in ("auto", "sdk"):
+        # In auto mode, prefer Codex CLI when available. This avoids unnecessary
+        # SDK initialization/failures in environments that intentionally route
+        # through the CLI path (for example integration tests and local wrappers).
+        should_try_sdk = backend == "sdk" or (backend == "auto" and not codex_cli_available)
+
+        if should_try_sdk:
             try:
                 if use_async:
                     if status_msg:

@@ -156,7 +156,7 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
 
     _boot_run_step("initializing engine", None, min_spin=0.45)
 
-    req = set(required_providers or {"codex", "gemini"})
+    req = {"codex", "gemini"} if required_providers is None else set(required_providers)
 
     if "codex" in req:
         codex_ready = _boot_run_step(
