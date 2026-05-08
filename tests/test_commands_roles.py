@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from clogem.services.contracts import CommandContext
 from clogem.services.commands import handle_pre_pipeline_command
 
 
@@ -15,19 +16,38 @@ class _FakeConsole:
         return self.input_value
 
 
-def _ctx(console: _FakeConsole, role_provider_map: dict[str, str]):
-    return {
-        "console": console,
-        "Text": lambda t, style=None: t,
-        "MUTED": "muted",
-        "TITLE": "title",
-        "LOG_WARN": "warn",
-        "LOG_ERR": "err",
-        "LOG_OK": "ok",
-        "section_rule": lambda *_: None,
-        "role_provider_map": role_provider_map,
-        "settings": None,
-    }
+def _ctx(console: _FakeConsole, role_provider_map: dict[str, str]) -> CommandContext:
+    return CommandContext(
+        console=console,
+        Text=lambda t, style=None: t,
+        MUTED="muted",
+        TITLE="title",
+        LOG_WARN="warn",
+        LOG_ERR="err",
+        LOG_OK="ok",
+        section_rule=lambda *_: None,
+        models={"codex": None, "gemini": None, "claude": None},
+        _codex_model=None,
+        _gemini_model=None,
+        _claude_model=None,
+        role_provider_map=role_provider_map,
+        settings=None,
+        _repo_root=lambda: ".",
+        _select_test_cmd=lambda: None,
+        _select_lint_cmd=lambda: None,
+        _run_local_command=lambda *_: (0, "", ""),
+        _parse_github_repo_ref=lambda *_: ("", "", ""),
+        _github_repo_info=lambda *_: "",
+        ensure_run_permissions=lambda: None,
+        run_permissions={},
+        _run_with_ascii_progress=lambda *_: None,
+        _run_proc=lambda *args, **kwargs: None,
+        _shlex_split_cmd=lambda s: s.split(),
+        _mention_roots_list=lambda: [],
+        _resolve_mention_path=lambda *_: None,
+        _path_allowed_for_mention=lambda *_: False,
+        _read_file_for_mention=lambda *_: "",
+    )
 
 
 def test_roles_subcommand_sets_orchestrator_and_prompts_for_claude_key(monkeypatch):
@@ -83,7 +103,7 @@ def test_config_command_prints_settings_json():
 
     console = _FakeConsole()
     ctx = _ctx(console, {"coder": "codex"})
-    ctx["settings"] = _Settings()
+    ctx.settings = _Settings()
     handled, should_exit = handle_pre_pipeline_command("/config", ctx)
     assert handled is True
     assert should_exit is False

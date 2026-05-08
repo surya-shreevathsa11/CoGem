@@ -81,6 +81,15 @@ async def async_main():
     )
     from clogem.role_mapping import needed_providers, resolve_role_provider_map
     from clogem.services.commands import handle_pre_pipeline_command
+    from clogem.services.contracts import (
+        CommandContext,
+        StitchStageDeps,
+        StitchStageRequest,
+        StitchStageUI,
+        TurnModeDeps,
+        TurnModeRequest,
+        TurnModeUI,
+    )
     from clogem.services.pipeline import build_context_blocks, maybe_run_stitch_stage
     from clogem.services.realtime_intent import (
         build_realtime_gemini_prompt,
@@ -2799,37 +2808,37 @@ Return project edits as:
             handled, should_exit = await asyncio.to_thread(
                 handle_pre_pipeline_command,
                 task,
-                {
-                    "console": console,
-                    "Text": Text,
-                    "MUTED": MUTED,
-                    "TITLE": TITLE,
-                    "LOG_WARN": LOG_WARN,
-                    "LOG_ERR": LOG_ERR,
-                    "LOG_OK": LOG_OK,
-                    "section_rule": section_rule,
-                    "models": models,
-                    "_codex_model": _codex_model,
-                    "_gemini_model": _gemini_model,
-                    "_claude_model": _claude_model,
-                    "role_provider_map": role_provider_map,
-                    "settings": settings,
-                    "_repo_root": _repo_root,
-                    "_select_test_cmd": _select_test_cmd,
-                    "_select_lint_cmd": _select_lint_cmd,
-                    "_run_local_command": _run_local_command,
-                    "_parse_github_repo_ref": _parse_github_repo_ref,
-                    "_github_repo_info": _github_repo_info,
-                    "ensure_run_permissions": ensure_run_permissions,
-                    "run_permissions": run_permissions,
-                    "_run_with_ascii_progress": _run_with_ascii_progress,
-                    "_run_proc": _run_proc,
-                    "_shlex_split_cmd": _shlex_split_cmd,
-                    "_mention_roots_list": _mention_roots_list,
-                    "_resolve_mention_path": _resolve_mention_path,
-                    "_path_allowed_for_mention": _path_allowed_for_mention,
-                    "_read_file_for_mention": _read_file_for_mention,
-                },
+                CommandContext(
+                    console=console,
+                    Text=Text,
+                    MUTED=MUTED,
+                    TITLE=TITLE,
+                    LOG_WARN=LOG_WARN,
+                    LOG_ERR=LOG_ERR,
+                    LOG_OK=LOG_OK,
+                    section_rule=section_rule,
+                    models=models,
+                    _codex_model=_codex_model,
+                    _gemini_model=_gemini_model,
+                    _claude_model=_claude_model,
+                    role_provider_map=role_provider_map,
+                    settings=settings,
+                    _repo_root=_repo_root,
+                    _select_test_cmd=_select_test_cmd,
+                    _select_lint_cmd=_select_lint_cmd,
+                    _run_local_command=_run_local_command,
+                    _parse_github_repo_ref=_parse_github_repo_ref,
+                    _github_repo_info=_github_repo_info,
+                    ensure_run_permissions=ensure_run_permissions,
+                    run_permissions=run_permissions,
+                    _run_with_ascii_progress=_run_with_ascii_progress,
+                    _run_proc=_run_proc,
+                    _shlex_split_cmd=_shlex_split_cmd,
+                    _mention_roots_list=_mention_roots_list,
+                    _resolve_mention_path=_resolve_mention_path,
+                    _path_allowed_for_mention=_path_allowed_for_mention,
+                    _read_file_for_mention=_read_file_for_mention,
+                ),
             )
             if should_exit:
                 break
@@ -3061,31 +3070,37 @@ Return project edits as:
 
             router_hint = ROUTER_DIRECTIVE_HINTS.get(session_directive or "", "")
             route = await resolve_turn_mode(
-                session_directive=session_directive,
-                task_clean=task_clean,
-                mem_block=mem_block,
-                build_router_prompt=build_router_prompt,
-                run_codex=lambda prompt, status: run_role("orchestrator", prompt, status),
-                runtime_stitch_capabilities_block=runtime_stitch_capabilities_block,
-                runtime_clogem_commands_capabilities_block=runtime_clogem_commands_capabilities_block,
-                router_hint=router_hint,
-                trace_doing=trace_doing,
-                trace_done=trace_done,
-                _say=_say,
-                console=console,
-                Text=Text,
-                LOG_ERR=LOG_ERR,
-                MUTED=MUTED,
-                _token_turn_footer=_token_turn_footer,
-                detect_stitch_frontend_heavy_task=detect_stitch_frontend_heavy_task,
-                detect_prerequisite_first_task=detect_prerequisite_first_task,
-                build_prerequisite_first_prompt=build_prerequisite_first_prompt,
-                secondary_intent_classifier=classify_intent_secondary,
+                TurnModeRequest(
+                    session_directive=session_directive,
+                    task_clean=task_clean,
+                    mem_block=mem_block,
+                    router_hint=router_hint,
+                ),
+                TurnModeDeps(
+                    build_router_prompt=build_router_prompt,
+                    run_codex=lambda prompt, status: run_role("orchestrator", prompt, status),
+                    runtime_stitch_capabilities_block=runtime_stitch_capabilities_block,
+                    runtime_clogem_commands_capabilities_block=runtime_clogem_commands_capabilities_block,
+                    detect_stitch_frontend_heavy_task=detect_stitch_frontend_heavy_task,
+                    detect_prerequisite_first_task=detect_prerequisite_first_task,
+                    build_prerequisite_first_prompt=build_prerequisite_first_prompt,
+                    secondary_intent_classifier=classify_intent_secondary,
+                ),
+                TurnModeUI(
+                    trace_doing=trace_doing,
+                    trace_done=trace_done,
+                    say=_say,
+                    console=console,
+                    text_factory=Text,
+                    log_err_style=LOG_ERR,
+                    muted_style=MUTED,
+                    token_turn_footer=_token_turn_footer,
+                ),
             )
-            if route["stop_turn"]:
+            if route.stop_turn:
                 continue
-            mode = route["mode"]
-            chat_reply = route["chat_reply"]
+            mode = route.mode
+            chat_reply = route.chat_reply
 
             if mode == "chat":
                 if attach_block:
@@ -3128,31 +3143,33 @@ Return project edits as:
             )
 
             stitch_ctx = await maybe_run_stitch_stage(
-                task_clean=task_clean,
-                task_raw=task,
-                mode=mode,
-                session_directive=session_directive,
-                stitch_feature_on=stitch_feature_on,
-                stitch_website_rules=STITCH_WEBSITE_RULES,
-                attach_block=attach_block,
-                trace_done=trace_done,
-                trace_doing=trace_doing,
-                section_rule=section_rule,
-                console=console,
-                Text=Text,
-                MUTED=MUTED,
-                read_task_line=read_task_line,
-                expand_at_mentions=expand_at_mentions,
-                looks_like_ui_content=looks_like_ui_content,
+                StitchStageRequest(
+                    task_clean=task_clean,
+                    task_raw=task,
+                    mode=mode,
+                    session_directive=session_directive,
+                    stitch_feature_on=stitch_feature_on,
+                    stitch_website_rules=STITCH_WEBSITE_RULES,
+                    attach_block=attach_block,
+                ),
+                StitchStageDeps(
+                    read_task_line=read_task_line,
+                    expand_at_mentions=expand_at_mentions,
+                    looks_like_ui_content=looks_like_ui_content,
+                ),
+                StitchStageUI(
+                    trace_done=trace_done,
+                    trace_doing=trace_doing,
+                    section_rule=section_rule,
+                    console=console,
+                    text_factory=Text,
+                    muted_style=MUTED,
+                ),
             )
-            stitch_block = stitch_ctx["stitch_block"]
-            stitch_rules_extra = stitch_ctx["stitch_rules_extra"]
-            frontend_detected_for_turn = (
-                stitch_ctx.get("frontend_detected", "False").lower() == "true"
-            )
-            stitch_heavy_for_turn = (
-                stitch_ctx.get("stitch_frontend_heavy", "False").lower() == "true"
-            )
+            stitch_block = stitch_ctx.stitch_block
+            stitch_rules_extra = stitch_ctx.stitch_rules_extra
+            frontend_detected_for_turn = stitch_ctx.frontend_detected
+            stitch_heavy_for_turn = stitch_ctx.stitch_frontend_heavy
 
             # ---------- generate ----------
 

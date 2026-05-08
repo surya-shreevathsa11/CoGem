@@ -4,10 +4,12 @@ import os
 import subprocess
 import json
 import re
-from typing import Any, Dict, Tuple
+from typing import Tuple
+
+from clogem.services.contracts import CommandContext
 
 
-def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, bool]:
+def handle_pre_pipeline_command(task: str, ctx: CommandContext) -> Tuple[bool, bool]:
     """
     Handle slash commands that short-circuit before router/build pipeline.
 
@@ -15,14 +17,14 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
     - handled: command matched and was handled
     - should_exit: caller should break the REPL loop
     """
-    console = ctx["console"]
-    Text = ctx["Text"]
-    MUTED = ctx["MUTED"]
-    TITLE = ctx["TITLE"]
-    LOG_WARN = ctx["LOG_WARN"]
-    LOG_ERR = ctx["LOG_ERR"]
-    LOG_OK = ctx["LOG_OK"]
-    section_rule = ctx["section_rule"]
+    console = ctx.console
+    Text = ctx.Text
+    MUTED = ctx.MUTED
+    TITLE = ctx.TITLE
+    LOG_WARN = ctx.LOG_WARN
+    LOG_ERR = ctx.LOG_ERR
+    LOG_OK = ctx.LOG_OK
+    section_rule = ctx.section_rule
 
     # Guardrail: if the user asks for a PDF in natural language, prefer the
     # explicit /pdf command instead of entering the build pipeline.
@@ -47,8 +49,8 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
 
     if task.startswith("/codex/model"):
         rest = task[len("/codex/model") :].strip()
-        models = ctx["models"]
-        _codex_model = ctx["_codex_model"]
+        models = ctx.models
+        _codex_model = ctx._codex_model
         if not rest:
             console.print(
                 Text(
@@ -92,8 +94,8 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
 
     if task.startswith("/gemini/model"):
         rest = task[len("/gemini/model") :].strip()
-        models = ctx["models"]
-        _gemini_model = ctx["_gemini_model"]
+        models = ctx.models
+        _gemini_model = ctx._gemini_model
         if not rest:
             console.print(
                 Text(
@@ -137,8 +139,8 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
 
     if task.startswith("/claude/model"):
         rest = task[len("/claude/model") :].strip()
-        models = ctx["models"]
-        _claude_model = ctx["_claude_model"]
+        models = ctx.models
+        _claude_model = ctx._claude_model
         if not rest:
             console.print(
                 Text(
@@ -179,7 +181,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         return True, False
 
     if task.strip().lower() == "/roles":
-        role_provider_map = ctx.get("role_provider_map", {})
+        role_provider_map = ctx.role_provider_map
         console.print()
         section_rule("Role provider mapping")
         console.print()
@@ -198,7 +200,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         return True, False
 
     if task.strip().lower() == "/config":
-        settings = ctx.get("settings")
+        settings = ctx.settings
         console.print()
         section_rule("Effective config")
         console.print()
@@ -215,7 +217,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         return True, False
 
     if task.strip().lower().startswith("/roles/"):
-        role_provider_map = ctx.get("role_provider_map", {})
+        role_provider_map = ctx.role_provider_map
         parts = [p.strip().lower() for p in task.strip().split("/") if p.strip()]
         # Expected shape: ["roles", "<role>", "<provider>"]
         if len(parts) != 3 or parts[0] != "roles":
@@ -288,7 +290,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         return True, False
 
     if task.startswith("/repo/info"):
-        _repo_root = ctx["_repo_root"]
+        _repo_root = ctx._repo_root
         root = _repo_root()
         console.print()
         section_rule("Repo info")
@@ -352,7 +354,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         return True, False
 
     if task.startswith("/test"):
-        cmd = ctx["_select_test_cmd"]()
+        cmd = ctx._select_test_cmd()
         console.print()
         section_rule("Tests")
         if not cmd:
@@ -361,7 +363,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             )
             console.print()
             return True, False
-        rc, out, err = ctx["_run_local_command"](cmd, "tests")
+        rc, out, err = ctx._run_local_command(cmd, "tests")
         if out.strip():
             console.print(out.strip())
         if rc != 0 and (err or "").strip():
@@ -369,7 +371,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         return True, False
 
     if task.startswith("/lint"):
-        cmd = ctx["_select_lint_cmd"]()
+        cmd = ctx._select_lint_cmd()
         console.print()
         section_rule("Lint")
         if not cmd:
@@ -378,7 +380,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             )
             console.print()
             return True, False
-        rc, out, err = ctx["_run_local_command"](cmd, "lint")
+        rc, out, err = ctx._run_local_command(cmd, "lint")
         if out.strip():
             console.print(out.strip())
         if rc != 0 and (err or "").strip():
@@ -390,7 +392,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         if not rest:
             console.print(Text("Usage: /run <command + args>", style=MUTED))
             return True, False
-        rc, out, err = ctx["_run_local_command"](rest, "run")
+        rc, out, err = ctx._run_local_command(rest, "run")
         console.print()
         section_rule("Command output")
         if out.strip():
@@ -410,14 +412,14 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
                 )
             )
             return True, False
-        owner, repo, _clone_url = ctx["_parse_github_repo_ref"](rest)
+        owner, repo, _clone_url = ctx._parse_github_repo_ref(rest)
         if not owner or not repo:
             console.print(
                 Text("Could not parse GitHub repository reference.", style=LOG_WARN)
             )
             return True, False
         console.print()
-        info = ctx["_github_repo_info"](owner, repo)
+        info = ctx._github_repo_info(owner, repo)
         section_rule("GitHub repository info")
         console.print()
         console.print(info)
@@ -437,7 +439,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         parts = rest.split()
         ref = parts[0].strip()
         dest = parts[1].strip() if len(parts) > 1 else ""
-        owner, repo, clone_url = ctx["_parse_github_repo_ref"](ref)
+        owner, repo, clone_url = ctx._parse_github_repo_ref(ref)
         if not owner or not repo or not clone_url:
             console.print(
                 Text("Could not parse GitHub repository reference.", style=LOG_WARN)
@@ -447,16 +449,16 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         if os.path.lexists(target_dir):
             console.print(Text(f"Target already exists: {target_dir}", style=LOG_WARN))
             return True, False
-        ctx["ensure_run_permissions"]()
-        if not ctx["run_permissions"].get("granted"):
+        ctx.ensure_run_permissions()
+        if not ctx.run_permissions.get("granted"):
             console.print(
                 Text("Local command execution denied by user permission.", style=LOG_WARN)
             )
             console.print()
             return True, False
-        proc = ctx["_run_with_ascii_progress"](
+        proc = ctx._run_with_ascii_progress(
             "git clone",
-            lambda: ctx["_run_proc"](["git", "clone", clone_url, target_dir], cwd=os.getcwd()),
+            lambda: ctx._run_proc(["git", "clone", clone_url, target_dir], cwd=os.getcwd()),
         )
         if proc.returncode == 0:
             console.print(Text(f"Cloned {owner}/{repo} -> {target_dir}", style=LOG_OK))
@@ -553,7 +555,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             from clogem.vector_index import VectorIndexConfig, semantic_search_repo
 
             rows = semantic_search_repo(
-                repo_root=ctx["_repo_root"](),
+                repo_root=ctx._repo_root(),
                 task=rest,
                 config=VectorIndexConfig(
                     enabled=True,
@@ -613,7 +615,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             )
             console.print()
             return True, False
-        tokens = ctx["_shlex_split_cmd"](rest)
+        tokens = ctx._shlex_split_cmd(rest)
         if not tokens:
             console.print(Text("Usage: /pdf <text> [out.pdf]", style=MUTED))
             console.print()
@@ -631,9 +633,9 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             and not content_tokens[0].startswith("@@")
         ):
             rel = content_tokens[0][1:]
-            roots = ctx["_mention_roots_list"]()
-            abs_p = ctx["_resolve_mention_path"](rel)
-            if not abs_p or not ctx["_path_allowed_for_mention"](abs_p, roots):
+            roots = ctx._mention_roots_list()
+            abs_p = ctx._resolve_mention_path(rel)
+            if not abs_p or not ctx._path_allowed_for_mention(abs_p, roots):
                 console.print(
                     Text(f"Could not read @ mention: {content_tokens[0]}", style=LOG_WARN)
                 )
@@ -645,7 +647,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
                 )
             except ValueError:
                 max_b = 400000
-            body = ctx["_read_file_for_mention"](abs_p, max_b)
+            body = ctx._read_file_for_mention(abs_p, max_b)
         else:
             body = " ".join(content_tokens).strip()
         if not body:
@@ -655,7 +657,7 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
         from clogem.pdf_tools import generate_pdf_from_text, pdf_path_for_text_request
 
         final_path, display_name = pdf_path_for_text_request(os.getcwd(), desired_out)
-        roots = ctx["_mention_roots_list"]()
+        roots = ctx._mention_roots_list()
         final_abs = os.path.realpath(final_path)
         if not any(
             final_abs == os.path.realpath(r)

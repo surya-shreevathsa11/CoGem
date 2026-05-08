@@ -21,6 +21,12 @@ from clogem.stitch import (
 )
 from clogem.stitch.adapters import format_stitch_context_for_codex
 from clogem.task_intent import detect_prerequisite_first_task
+from clogem.services.contracts import (
+    StitchStageDeps,
+    StitchStageRequest,
+    StitchStageResult,
+    StitchStageUI,
+)
 
 logger = get_logger(__name__)
 
@@ -342,110 +348,96 @@ def build_context_blocks(
 
 
 async def maybe_run_stitch_stage(
-    *,
-    task_clean: str,
-    task_raw: str,
-    mode: str,
-    session_directive: str | None,
-    stitch_feature_on: bool,
-    stitch_website_rules: str,
-    attach_block: str,
-    trace_done: Any,
-    trace_doing: Any,
-    section_rule: Any,
-    console: Any,
-    Text: Any,
-    MUTED: Any,
-    read_task_line: Any,
-    expand_at_mentions: Any,
-    looks_like_ui_content: Any,
-) -> Dict[str, str]:
-    frontend_detected = detect_frontend_task(task_clean)
-    stitch_frontend_heavy = detect_stitch_frontend_heavy_task(task_clean)
-    prereq_first = detect_prerequisite_first_task(task_clean)
+    request: StitchStageRequest,
+    deps: StitchStageDeps,
+    ui: StitchStageUI,
+) -> StitchStageResult:
+    frontend_detected = detect_frontend_task(request.task_clean)
+    stitch_frontend_heavy = detect_stitch_frontend_heavy_task(request.task_clean)
+    prereq_first = detect_prerequisite_first_task(request.task_clean)
     stitch_block = ""
     stitch_rules_extra = ""
-    if stitch_frontend_heavy and stitch_website_rules.strip():
+    if stitch_frontend_heavy and request.stitch_website_rules.strip():
         stitch_rules_extra = (
-            "\n\n## STITCH_WEBSITE rules (strict)\n" + stitch_website_rules + "\n"
+            "\n\n## STITCH_WEBSITE rules (strict)\n" + request.stitch_website_rules + "\n"
         )
 
-    trace_done(
+    ui.trace_done(
         "Pipeline gating: "
-        f"mode={mode}, frontend_detected={frontend_detected}, "
+        f"mode={request.mode}, frontend_detected={frontend_detected}, "
         f"stitch_frontend_heavy={stitch_frontend_heavy}, "
-        f"prerequisite_first={prereq_first}, stitch_feature_on={stitch_feature_on}, "
-        f"session_directive={session_directive or '(none)'}"
+        f"prerequisite_first={prereq_first}, stitch_feature_on={request.stitch_feature_on}, "
+        f"session_directive={request.session_directive or '(none)'}"
     )
 
     if (
-        stitch_feature_on
-        and mode == "workflow"
+        request.stitch_feature_on
+        and request.mode == "workflow"
         and stitch_frontend_heavy
-        and (not prereq_first or session_directive == "build")
+        and (not prereq_first or request.session_directive == "build")
     ):
-        if should_skip_stitch_due_to_attachments(attach_block):
-            trace_done(
+        if should_skip_stitch_due_to_attachments(request.attach_block):
+            ui.trace_done(
                 "Frontend task detected; skipping Stitch because @ attachments already include UI/HTML."
             )
         else:
-            trace_doing(
+            ui.trace_doing(
                 "Frontend-heavy task detected; running the Google Stitch stage (adapter or manual handoff)."
             )
-            stitch_prompt = build_stitch_prompt(task_clean)
+            stitch_prompt = build_stitch_prompt(request.task_clean)
             sr = try_stitch_adapters(stitch_prompt)
             if sr.mode == "direct" and sr.content:
                 stitch_block = format_stitch_context_for_codex(sr.content)
-                trace_done(
+                ui.trace_done(
                     f"Stitch: received UI via adapter ({sr.adapter_name}). Continuing with Codex + Gemini."
                 )
             else:
                 reason = (sr.detail or "").strip()
                 if reason:
                     reason = reason.replace("\n", " ")[:220]
-                    trace_done(
+                    ui.trace_done(
                         "Stitch: direct integration unavailable; using manual handoff "
                         f"(reason: {reason})."
                     )
                 else:
-                    trace_done(
+                    ui.trace_done(
                         "Stitch: direct integration unavailable; using manual handoff (prompt + export)."
                     )
-                console.print()
-                section_rule("Stitch prompt (copy into Google Stitch)")
-                console.print()
-                console.print(stitch_prompt)
-                console.print()
+                ui.console.print()
+                ui.section_rule("Stitch prompt (copy into Google Stitch)")
+                ui.console.print()
+                ui.console.print(stitch_prompt)
+                ui.console.print()
                 if _copy_to_clipboard(stitch_prompt):
-                    console.print(
-                        Text(
+                    ui.console.print(
+                        ui.text_factory(
                             "Copied Stitch prompt to clipboard.",
-                            style=MUTED,
+                            style=ui.muted_style,
                         )
                     )
-                    console.print()
-                console.print(
-                    Text(
+                    ui.console.print()
+                ui.console.print(
+                    ui.text_factory(
                         "Stitch manual fallback.\n"
                         "1) In Stitch, export the generated frontend (HTML/CSS, or a bundled HTML that includes styles).\n"
                         "2) Paste it below (preferred: the main HTML, plus any CSS/JS it depends on).\n"
                         "3) Or provide `@path/to/export.html` / `@path/to/export.css`.\n"
                         "Press Enter on an empty line to skip.",
-                        style=MUTED,
+                        style=ui.muted_style,
                     )
                 )
-                console.print()
+                ui.console.print()
                 if not sys.stdin.isatty():
-                    console.print(
-                        Text(
+                    ui.console.print(
+                        ui.text_factory(
                             "Non-interactive stdin: cannot prompt for Stitch paste. "
                             "Set CLOGEM_STITCH_CLI or CLOGEM_STITCH_HTTP_URL, or run clogem in a real terminal.",
-                            style=MUTED,
+                            style=ui.muted_style,
                         )
                     )
-                    trace_done("Skipping Stitch paste; continuing without Stitch HTML.")
+                    ui.trace_done("Skipping Stitch paste; continuing without Stitch HTML.")
                 else:
-                    stitch_in_v = read_task_line(
+                    stitch_in_v = deps.read_task_line(
                         "Stitch export — paste code or @path (Enter to skip): "
                     )
                     if inspect.isawaitable(stitch_in_v):
@@ -453,10 +445,10 @@ async def maybe_run_stitch_stage(
                     else:
                         stitch_in = stitch_in_v
                     if stitch_in.strip():
-                        if looks_like_ui_content(stitch_in):
+                        if deps.looks_like_ui_content(stitch_in):
                             stitch_block = format_stitch_context_for_codex(stitch_in)
                         else:
-                            _c2, attach_s = expand_at_mentions(stitch_in)
+                            _c2, attach_s = deps.expand_at_mentions(stitch_in)
                             if attach_s:
                                 stitch_block = (
                                     "\n\n---\n\n## Stitch / UI source (from your files)\n\n"
@@ -464,17 +456,17 @@ async def maybe_run_stitch_stage(
                                 )
                             else:
                                 stitch_block = format_stitch_context_for_codex(stitch_in)
-                        trace_done(
+                        ui.trace_done(
                             "Stitch export captured; continuing with Codex draft using this UI context."
                         )
                     else:
-                        trace_done(
+                        ui.trace_done(
                             "No Stitch export; Codex will draft from your task alone (no Stitch HTML)."
                         )
-    return {
-        "stitch_block": stitch_block,
-        "stitch_rules_extra": stitch_rules_extra,
-        "stitch_frontend_heavy": str(bool(stitch_frontend_heavy)),
-        "frontend_detected": str(bool(frontend_detected)),
-    }
+    return StitchStageResult(
+        stitch_block=stitch_block,
+        stitch_rules_extra=stitch_rules_extra,
+        stitch_frontend_heavy=bool(stitch_frontend_heavy),
+        frontend_detected=bool(frontend_detected),
+    )
 
