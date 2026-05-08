@@ -173,6 +173,28 @@ async def async_main():
     _gemini_model = (_args.gemini_model or os.environ.get("CLOGEM_GEMINI_MODEL") or "").strip() or None
     _claude_model = (_args.claude_model or os.environ.get("CLOGEM_CLAUDE_MODEL") or "").strip() or None
     settings = Settings.from_env()
+
+    loop = asyncio.get_running_loop()
+
+    def _loop_exception_handler(_loop, context) -> None:
+        exc = context.get("exception")
+        msg = str(context.get("message") or "")
+        txt = f"{msg}\n{exc or ''}".lower()
+        # Suppress known google-genai async cleanup noise for end users.
+        if (
+            "task exception was never retrieved" in txt
+            and "baseapiclient" in txt
+            and "_async_httpx_client" in txt
+        ):
+            logger.debug(
+                "Suppressed google-genai async cleanup exception noise",
+                exc_info=True,
+            )
+            return
+        _loop.default_exception_handler(context)
+
+    loop.set_exception_handler(_loop_exception_handler)
+
     role_provider_map = resolve_role_provider_map(
         env_map_raw=os.environ.get("CLOGEM_ROLE_PROVIDER_MAP", ""),
         cli_pairs=list(_args.role_provider or []),
@@ -971,10 +993,14 @@ async def async_main():
                 style=MUTED,
             )
         )
-        ans = console.input(
-            Text("Allow both for this clogem session? [y/N]: ", style=TITLE)
-        ).strip().lower()
-        auto_permissions["granted"] = ans in ("y", "yes")
+        # Use plain stdin input (not Rich input) to avoid terminal state issues
+        # after subprocess crashes/spinner redraws. Default to "yes" on Enter.
+        try:
+            ans_raw = input("Allow both for this clogem session? [Y/n]: ")
+        except EOFError:
+            ans_raw = ""
+        ans = re.sub(r"[^a-zA-Z]", "", (ans_raw or "").strip()).lower()
+        auto_permissions["granted"] = ans in ("", "y", "yes")
         if not auto_permissions["granted"]:
             console.print(
                 Text(
