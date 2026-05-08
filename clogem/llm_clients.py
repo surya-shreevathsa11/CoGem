@@ -351,9 +351,20 @@ def _guess_mime_type_for_image_path(image_path: str) -> str:
     Defaults to PNG for unknown/unmapped extensions to preserve prior behavior.
     """
     mime, _enc = mimetypes.guess_type(image_path)
-    if not mime:
-        return "image/png"
-    return mime
+    if mime:
+        return mime
+
+    # Some Windows runners have incomplete mime registries (e.g. .webp).
+    ext = os.path.splitext(image_path)[1].strip().lower()
+    fallback_by_ext = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+        ".bmp": "image/bmp",
+    }
+    return fallback_by_ext.get(ext, "image/png")
 
 
 def gemini_generate_with_image(
