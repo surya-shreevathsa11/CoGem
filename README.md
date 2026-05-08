@@ -667,7 +667,7 @@ If you want Docker validation (preferred when available), enable it explicitly:
 
 Strict mode:
 
-- If `CLOGEM_STRICT_SANDBOX=1` and Docker is not available, clogem **skips validation** (so you keep zero-friction behavior).
+- If `CLOGEM_STRICT_SANDBOX=1` and Docker is not available, validation **fails** (strict mode is a hard gate).
 
 Docker base images:
 
@@ -860,7 +860,7 @@ pip install ".[vector]"
 | `CLOGEM_SUBPROCESS_TIMEOUT_SEC`      | Integer seconds; abort a stuck `codex` / `gemini` subprocess after this time                                                                     |
 | `CLOGEM_STREAM_DIFFS`                | `1`/`0` — stream a live unified diff during Codex improvements (opt-in; only when stdout is a TTY)                                               |
 | `CLOGEM_VALIDATION_DOCKER`           | `yes` / `no` — prefer Docker-based validation backend (tests/lint/typecheck). See `--validation-docker`                                          |
-| `CLOGEM_STRICT_SANDBOX`              | `1` / `0` — when `1`, require Docker for validation; if Docker is missing, clogem skips validation                                                |
+| `CLOGEM_STRICT_SANDBOX`              | `1` / `0` — when `1`, require Docker for validation; if Docker is missing, validation fails                                                        |
 | `CLOGEM_DOCKER_PY_IMAGE`             | Docker image for Python validation (default `python:3.12-slim`)                                                                                  |
 | `CLOGEM_DOCKER_NODE_IMAGE`           | Docker image for Node validation (default `node:20-slim`)                                                                                        |
 | `CLOGEM_VALIDATION_MAX_ATTEMPTS`     | Max automated validation iterations for `/build` (default `2`)                                                                                   |

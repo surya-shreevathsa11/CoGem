@@ -1806,9 +1806,9 @@ async def async_main():
         if require_docker_for_validation:
             if not docker_ok:
                 trace_done(
-                    "Validation: strict sandbox requested but Docker is unavailable; skipping validation."
+                    "Validation: strict sandbox requested but Docker is unavailable; failing validation."
                 )
-                return True, "Validation skipped: Docker required (CLOGEM_STRICT_SANDBOX=1) but not available."
+                return False, "Strict sandbox mode requires Docker, which is not available."
             trace_done("Validation: using Docker backend (strict).")
             return _run_validation_suite_docker()
 

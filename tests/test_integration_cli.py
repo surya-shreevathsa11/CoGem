@@ -88,7 +88,12 @@ def _write_fake_clis(bin_dir: Path) -> None:
             pass
 
 
-def _run_cli(repo_root: Path, stdin_text: str, bin_dir: Path) -> subprocess.CompletedProcess:
+def _run_cli(
+    repo_root: Path,
+    stdin_text: str,
+    bin_dir: Path,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
     codex_exec = "codex.cmd" if os.name == "nt" else "codex"
@@ -105,6 +110,8 @@ def _run_cli(repo_root: Path, stdin_text: str, bin_dir: Path) -> subprocess.Comp
     env["CLOGEM_VALIDATION_MAX_ATTEMPTS"] = "1"
     env["CLOGEM_GEMINI_REALTIME"] = "0"
     env["PYTHONIOENCODING"] = "utf-8"
+    if extra_env:
+        env.update(extra_env)
 
     return subprocess.run(
         [sys.executable, "-m", "clogem.cli"],
@@ -177,4 +184,20 @@ def test_cli_research_without_attachments_skips_build_pipeline(tmp_path: Path):
     assert "Initial output" not in out
     assert "Review (" not in out
     assert "Summary (" not in out
+
+
+def test_cli_strict_sandbox_without_docker_fails_validation(tmp_path: Path):
+    repo_root = Path(__file__).resolve().parents[1]
+    bin_dir = tmp_path / "bin"
+    _write_fake_clis(bin_dir)
+
+    proc = _run_cli(
+        repo_root,
+        "/build implement answer\n/exit\n",
+        bin_dir,
+        extra_env={"CLOGEM_STRICT_SANDBOX": "1"},
+    )
+    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    assert proc.returncode == 0
+    assert "Strict sandbox mode requires Docker, which is not available." in out
 
