@@ -195,7 +195,9 @@ def test_cli_strict_sandbox_without_docker_fails_validation(tmp_path: Path):
         repo_root,
         "/build implement answer\n/exit\n",
         bin_dir,
-        extra_env={"CLOGEM_STRICT_SANDBOX": "1"},
+        # Force docker lookup failure so strict-sandbox behavior is deterministic
+        # across CI runners (some images have Docker preinstalled).
+        extra_env={"CLOGEM_STRICT_SANDBOX": "1", "PATH": str(bin_dir)},
     )
     out = (proc.stdout or "") + "\n" + (proc.stderr or "")
     assert proc.returncode == 0
