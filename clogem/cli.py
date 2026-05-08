@@ -1619,6 +1619,16 @@ async def async_main():
                         )
                     else:
                         r = await _run_sdk_async()
+                    if r.returncode != 0:
+                        logger.debug(
+                            "Gemini async SDK call failed; retrying with sync SDK path. error=%s",
+                            r.error,
+                        )
+                        r = (
+                            _run_with_ascii_progress(status_msg, _run_sdk_sync)
+                            if status_msg
+                            else _run_sdk_sync()
+                        )
                 else:
                     r = (
                         _run_with_ascii_progress(status_msg, _run_sdk_sync)
@@ -1689,6 +1699,24 @@ async def async_main():
                 if backend == "sdk":
                     return "", r.error or "Gemini SDK call failed.", 1
             except Exception as e:
+                if use_async:
+                    logger.debug(
+                        "Gemini async SDK path raised; retrying with sync SDK path",
+                        exc_info=True,
+                    )
+                    try:
+                        r = (
+                            _run_with_ascii_progress(status_msg, _run_sdk_sync)
+                            if status_msg
+                            else _run_sdk_sync()
+                        )
+                        if r.returncode == 0:
+                            _record_tokens("gemini", r.text or "")
+                            return (r.text or "").strip(), "", 0
+                        if backend == "sdk":
+                            return "", r.error or "Gemini SDK call failed.", 1
+                    except Exception:
+                        logger.debug("Gemini sync fallback also failed", exc_info=True)
                 if backend == "sdk":
                     return "", str(e), 1
 
@@ -1739,6 +1767,16 @@ async def async_main():
                         )
                     else:
                         r = await _run_sdk_async()
+                    if r.returncode != 0:
+                        logger.debug(
+                            "Gemini grounded async call failed; retrying with sync SDK path. error=%s",
+                            r.error,
+                        )
+                        r = (
+                            _run_with_ascii_progress(status_msg, _run_sdk_sync)
+                            if status_msg
+                            else _run_sdk_sync()
+                        )
                 else:
                     r = (
                         _run_with_ascii_progress(status_msg, _run_sdk_sync)
@@ -1751,6 +1789,27 @@ async def async_main():
                 if backend == "sdk":
                     return "", r.error or "Gemini grounded call failed.", 1
             except Exception as e:
+                if use_async:
+                    logger.debug(
+                        "Gemini grounded async path raised; retrying with sync SDK path",
+                        exc_info=True,
+                    )
+                    try:
+                        r = (
+                            _run_with_ascii_progress(status_msg, _run_sdk_sync)
+                            if status_msg
+                            else _run_sdk_sync()
+                        )
+                        if r.returncode == 0:
+                            _record_tokens("gemini", r.text or "")
+                            return (r.text or "").strip(), "", 0
+                        if backend == "sdk":
+                            return "", r.error or "Gemini grounded call failed.", 1
+                    except Exception:
+                        logger.debug(
+                            "Gemini grounded sync fallback also failed",
+                            exc_info=True,
+                        )
                 if backend == "sdk":
                     return "", str(e), 1
 
