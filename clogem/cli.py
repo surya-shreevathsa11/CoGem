@@ -1592,7 +1592,10 @@ async def async_main():
         )
         timeout = _subprocess_timeout_sec() or 60
 
-        use_async = settings.async_llm
+        # google-genai async client has shown intermittent cleanup crashes in some
+        # environments (`_async_httpx_client` missing). Keep grounded lookup on
+        # sync SDK path for stability.
+        use_async = False
         codex_cmd_parts = (
             _shlex_split_cmd(os.environ.get("CLOGEM_CODEX_CMD", "").strip()) or ["codex"]
         )
@@ -1658,7 +1661,9 @@ async def async_main():
         )
         timeout = _subprocess_timeout_sec() or 60
 
-        use_async = settings.async_llm
+        # Keep Gemini on sync SDK path for stability. Some google-genai async
+        # client versions raise `_async_httpx_client` cleanup errors.
+        use_async = False
         gemini_cmd_parts = (
             _shlex_split_cmd(os.environ.get("CLOGEM_GEMINI_CMD", "").strip())
             or ["gemini"]
@@ -2991,17 +2996,25 @@ Return project edits as:
                     "Gemini: live web lookup...",
                 )
                 if rt_rc != 0:
-                    console.print()
-                    _say(
-                        f"[clogem] ERROR: Gemini live lookup exited with code {rt_rc}."
+                    trace_done(
+                        "Gemini grounded lookup failed; retrying with non-grounded Gemini."
                     )
-                    if (rt_err or "").strip():
-                        console.print(
-                            Text((rt_err or "").strip()[:1200], style=LOG_ERR)
+                    rt_raw, rt_err, rt_rc = await run_gemini(
+                        rt_prompt,
+                        "Gemini: live lookup fallback...",
+                    )
+                    if rt_rc != 0:
+                        console.print()
+                        _say(
+                            f"[clogem] ERROR: Gemini live lookup exited with code {rt_rc}."
                         )
-                    console.print()
-                    _token_turn_footer()
-                    continue
+                        if (rt_err or "").strip():
+                            console.print(
+                                Text((rt_err or "").strip()[:1200], style=LOG_ERR)
+                            )
+                        console.print()
+                        _token_turn_footer()
+                        continue
                 chat_reply = (rt_raw or "").strip()
                 chat_reply, auto_persists = extract_persist_directives(chat_reply)
                 apply_persist_directives(memory, auto_persists)
@@ -3279,10 +3292,9 @@ Return project edits as:
                     os.environ.get("CLOGEM_IMAGE_SPEC_MODEL", "").strip()
                     or "gemini-2.5-flash"
                 )
-                use_async_vs = (
-                    os.environ.get("CLOGEM_ASYNC_LLM", "1").strip().lower()
-                    not in ("0", "false", "no", "off", "disabled")
-                )
+                # Keep vision spec generation on sync path for the same
+                # google-genai async stability reason noted above.
+                use_async_vs = False
                 vs_parts: List[str] = []
                 for img in image_mentions[:4]:
                     prompt_vs = (
