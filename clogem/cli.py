@@ -1491,10 +1491,12 @@ async def async_main():
         docker_ok = _docker_available()
         if require_docker_for_validation:
             if not docker_ok:
+                msg = "Strict sandbox mode requires Docker, which is not available."
                 trace_done(
                     "Validation: strict sandbox requested but Docker is unavailable; failing validation."
                 )
-                return False, "Strict sandbox mode requires Docker, which is not available."
+                print(msg)
+                return False, msg
             trace_done("Validation: using Docker backend (strict).")
             return _run_validation_suite_docker()
 
@@ -3202,12 +3204,7 @@ Return project edits as:
                 and require_docker_for_validation
                 and not _docker_available()
             ):
-                console.print(
-                    Text(
-                        "Strict sandbox mode requires Docker, which is not available.",
-                        style=LOG_WARN,
-                    )
-                )
+                print("Strict sandbox mode requires Docker, which is not available.")
 
             # ---------- generate ----------
 
