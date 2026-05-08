@@ -1647,6 +1647,14 @@ async def async_main():
         timeout = _subprocess_timeout_sec() or 60
 
         use_async = settings.async_llm
+        gemini_cmd_parts = (
+            _shlex_split_cmd(os.environ.get("CLOGEM_GEMINI_CMD", "").strip())
+            or ["gemini"]
+        )
+        gemini_exe = gemini_cmd_parts[0] if gemini_cmd_parts else "gemini"
+        gemini_cli_available = bool(
+            shutil.which(gemini_exe) or os.path.isfile(gemini_exe)
+        )
 
         async def _run_sdk_async():
             return await gemini_generate_async(prompt, sdk_model, timeout_sec=timeout)
@@ -1654,7 +1662,11 @@ async def async_main():
         def _run_sdk_sync():
             return gemini_generate(prompt, sdk_model, timeout_sec=timeout)
 
-        if backend in ("auto", "sdk"):
+        should_try_sdk = backend == "sdk" or (
+            backend == "auto" and not gemini_cli_available
+        )
+
+        if should_try_sdk:
             try:
                 if use_async:
                     if status_msg:
@@ -1819,16 +1831,19 @@ async def async_main():
         if not enabled:
             return None
         model = settings.router_classifier_model
-        timeout = _subprocess_timeout_sec() or 30
         prompt = ROUTER_SECONDARY_INTENT_PROMPT.replace("__TASK__", task_text or "")
-        use_async = settings.async_llm
-        if use_async:
-            r = await gemini_generate_async(prompt, model, timeout_sec=timeout)
-        else:
-            r = gemini_generate(prompt, model, timeout_sec=timeout)
-        if r.returncode != 0:
+        prev_model = models.get("gemini")
+        models["gemini"] = model
+        try:
+            out, _err, rc = await run_gemini(prompt, "")
+        finally:
+            if prev_model:
+                models["gemini"] = prev_model
+            else:
+                models.pop("gemini", None)
+        if rc != 0:
             return None
-        first = ((r.text or "").strip().splitlines() or [""])[0].strip().upper()
+        first = ((out or "").strip().splitlines() or [""])[0].strip().upper()
         if first in ("BUILD", "CHAT"):
             return first
         return None
@@ -3180,6 +3195,18 @@ Return project edits as:
             stitch_rules_extra = stitch_ctx.stitch_rules_extra
             frontend_detected_for_turn = stitch_ctx.frontend_detected
             stitch_heavy_for_turn = stitch_ctx.stitch_frontend_heavy
+
+            if (
+                session_directive == "build"
+                and require_docker_for_validation
+                and not _docker_available()
+            ):
+                console.print(
+                    Text(
+                        "Strict sandbox mode requires Docker, which is not available.",
+                        style=LOG_WARN,
+                    )
+                )
 
             # ---------- generate ----------
 
