@@ -1832,12 +1832,13 @@ async def async_main():
             return None
         model = settings.router_classifier_model
         prompt = ROUTER_SECONDARY_INTENT_PROMPT.replace("__TASK__", task_text or "")
+        had_prev_model = "gemini" in models
         prev_model = models.get("gemini")
         models["gemini"] = model
         try:
             out, _err, rc = await run_gemini(prompt, "")
         finally:
-            if prev_model:
+            if had_prev_model:
                 models["gemini"] = prev_model
             else:
                 models.pop("gemini", None)
@@ -3277,6 +3278,7 @@ Return project edits as:
                         os.environ.get("CLOGEM_ARCHITECT_MODEL", "").strip()
                         or "gemini-2.5-pro"
                     )
+                    had_prev_model = "gemini" in models
                     prev_model = models.get("gemini")
                     models["gemini"] = arch_model
                     try:
@@ -3284,7 +3286,7 @@ Return project edits as:
                             arch_prompt, "Architect: planning parallel subtasks..."
                         )
                     finally:
-                        if prev_model:
+                        if had_prev_model:
                             models["gemini"] = prev_model
                         else:
                             models.pop("gemini", None)
@@ -3320,6 +3322,7 @@ Return project edits as:
                     or "gemini-2.5-pro"
                 )
                 integ_prompt = INTEGRATION_REVIEW_PROMPT.replace("__OUTPUTS__", joined[:50000])
+                had_prev_model = "gemini" in models
                 prev_model = models.get("gemini")
                 models["gemini"] = integ_model
                 try:
@@ -3327,7 +3330,7 @@ Return project edits as:
                         integ_prompt, "Integrator: merging team outputs..."
                     )
                 finally:
-                    if prev_model:
+                    if had_prev_model:
                         models["gemini"] = prev_model
                     else:
                         models.pop("gemini", None)
