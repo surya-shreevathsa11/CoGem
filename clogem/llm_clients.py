@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 from dataclasses import dataclass
 from typing import Optional
 
@@ -150,6 +151,17 @@ async def claude_generate_async(
     return await asyncio.to_thread(claude_generate, prompt, model, timeout_sec)
 
 
+def _guess_mime_type_for_image_path(image_path: str) -> str:
+    """
+    Infer MIME type from image path extension.
+    Defaults to PNG for unknown/unmapped extensions to preserve prior behavior.
+    """
+    mime, _enc = mimetypes.guess_type(image_path)
+    if not mime:
+        return "image/png"
+    return mime
+
+
 def gemini_generate_with_image(
     prompt: str,
     model: str,
@@ -165,11 +177,12 @@ def gemini_generate_with_image(
         with open(image_path, "rb") as f:
             img = f.read()
         client = genai.Client()
+        mime_type = _guess_mime_type_for_image_path(image_path)
         rsp = client.models.generate_content(
             model=model,
             contents=[
                 prompt,
-                types.Part.from_bytes(data=img, mime_type="image/png"),
+                types.Part.from_bytes(data=img, mime_type=mime_type),
             ],
             config={"http_options": {"timeout": (timeout_sec or 60) * 1000}},
         )
