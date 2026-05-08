@@ -187,6 +187,87 @@ def handle_pre_pipeline_command(task: str, ctx: Dict[str, Any]) -> Tuple[bool, b
             provider = role_provider_map.get(role, "codex")
             console.print(Text(f"{role}: {provider}", style=MUTED))
         console.print()
+        console.print(
+            Text(
+                "Set a role provider with: /roles/<role>/<provider> "
+                "(roles: orchestrator, planner, coder, reviewer, summariser; providers: codex, gemini, claude)",
+                style=MUTED,
+            )
+        )
+        console.print()
+        return True, False
+
+    if task.strip().lower().startswith("/roles/"):
+        role_provider_map = ctx.get("role_provider_map", {})
+        parts = [p.strip().lower() for p in task.strip().split("/") if p.strip()]
+        # Expected shape: ["roles", "<role>", "<provider>"]
+        if len(parts) != 3 or parts[0] != "roles":
+            console.print(
+                Text(
+                    "Usage: /roles/<role>/<provider> "
+                    "(example: /roles/orchestrator/claude)",
+                    style=LOG_WARN,
+                )
+            )
+            return True, False
+
+        role_in = parts[1]
+        provider = parts[2]
+        role_aliases = {"cover": "coder"}
+        role = role_aliases.get(role_in, role_in)
+        valid_roles = {"orchestrator", "planner", "coder", "reviewer", "summariser"}
+        valid_providers = {"codex", "gemini", "claude"}
+
+        if role not in valid_roles:
+            console.print(
+                Text(
+                    "Unknown role. Use one of: orchestrator, planner, coder, reviewer, summariser",
+                    style=LOG_WARN,
+                )
+            )
+            return True, False
+        if provider not in valid_providers:
+            console.print(
+                Text(
+                    "Unknown provider. Use one of: codex, gemini, claude",
+                    style=LOG_WARN,
+                )
+            )
+            return True, False
+
+        role_provider_map[role] = provider
+        console.print(Text(f"Set {role} -> {provider}", style=TITLE))
+
+        if provider == "claude" and not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+            console.print(
+                Text(
+                    "Claude selected but ANTHROPIC_API_KEY is not set.",
+                    style=LOG_WARN,
+                )
+            )
+            key_prompt = (
+                "Paste Anthropic API key now (leave blank to skip): "
+            )
+            key_val = ""
+            try:
+                key_val = (console.input(key_prompt) or "").strip()
+            except Exception:
+                key_val = ""
+            if key_val:
+                os.environ["ANTHROPIC_API_KEY"] = key_val
+                console.print(
+                    Text(
+                        "ANTHROPIC_API_KEY set for this session.",
+                        style=LOG_OK,
+                    )
+                )
+            else:
+                console.print(
+                    Text(
+                        "Claude mapping saved; set ANTHROPIC_API_KEY to use Claude calls.",
+                        style=LOG_WARN,
+                    )
+                )
         return True, False
 
     if task.startswith("/repo/info"):

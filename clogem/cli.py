@@ -2661,6 +2661,7 @@ Return project edits as:
         ("/gemini/model", "Show or set Gemini LLM (review + summary)"),
         ("/claude/model", "Show or set Claude LLM (SDK only)"),
         ("/roles", "Show active role->provider mapping"),
+        ("/roles/<role>/<provider>", "Set role provider inline (e.g. /roles/orchestrator/claude)"),
         ("/repo/info", "Show repo info (git status, branch, last commit)"),
         ("/test", "Run project tests (best-effort; Python or Node)"),
         ("/lint", "Run project lint (best-effort; Python or Node)"),
@@ -3441,7 +3442,7 @@ No markdown, no other text."""
                         "/codex/model <MODEL_ID|reset>   "
                         "/gemini/model <MODEL_ID|reset>   "
                         "/claude/model <MODEL_ID|reset>   "
-                        "/roles   "
+                        "/roles   /roles/<role>/<provider>   "
                         "/repo/info /test /lint   "
                         "/run <cmd>   "
                         "/github/info <url|owner/repo>   "

@@ -24,6 +24,9 @@ This creates a self-improving coding workflow that works for:
 - Multi-file project generation
 - CLI-based workflow (fast and repeatable)
 
+Detailed capability reference: [`features.md`](features.md)  
+Command reference: [`help.md`](help.md)
+
 ---
 
 ## How Codex, Gemini, and Claude work in Clogem
@@ -610,6 +613,8 @@ Async LLM execution path:
 
 On an interactive terminal, the main task prompt uses **prompt-style completion**: type `/` or `@` and use **Tab** (or keep typing) to open a **two-column** menu (command/path + short description) with a **dark** theme. For colors closest to the Codex-style blue/grey look, use **Windows Terminal** or another **true-color** terminal. Set `**CLOGEM_NO_TRUE_COLOR=1`** if the menu colors look wrong on legacy consoles.
 
+For a full slash-command reference, see [`help.md`](help.md).
+
 While Clogem is running, you can change models without restarting:
 
 
@@ -625,6 +630,7 @@ While Clogem is running, you can change models without restarting:
 | `/claude/model <MODEL_ID>`                 | Use that ID for **all Claude SDK** calls this session                         |
 | `/claude/model reset`                      | Restore Claude model from `--claude-model` / `CLOGEM_CLAUDE_MODEL`             |
 | `/roles`                                   | Show active role-to-provider mapping                                           |
+| `/roles/<role>/<provider>`                 | Set role provider in-session (example: `/roles/orchestrator/claude`)          |
 | `/repo/info`                               | Show repo info (git root, branch, last commit, status)                        |
 | `/test`                                    | Run project tests (best-effort; Python or Node)                               |
 | `/lint`                                    | Run project lint (best-effort; Python or Node)                                |
