@@ -882,11 +882,17 @@ async def async_main():
         cmd: List[str], status_msg: Optional[str] = None
     ) -> Tuple[str, str, int]:
         to = _subprocess_timeout_sec()
+        exe_name = os.path.basename(cmd[0]).lower() if cmd else ""
+        is_gemini_cli = "gemini" in exe_name
 
         async def _run_async():
             kw = {"capture_output": True, "text": True}
             if to is not None:
                 kw["timeout"] = to
+            if is_gemini_cli:
+                env = os.environ.copy()
+                env.setdefault("GEMINI_CLI_TRUST_WORKSPACE", "true")
+                kw["env"] = env
             try:
                 return await asyncio.to_thread(subprocess.run, cmd, **kw)
             except subprocess.TimeoutExpired:
@@ -1558,6 +1564,8 @@ async def async_main():
     def _gemini_argv(prompt: str) -> List[str]:
         base = _shlex_split_cmd(os.environ.get("CLOGEM_GEMINI_CMD", "").strip()) or ["gemini"]
         argv = list(base)
+        if "--skip-trust" not in argv:
+            argv.append("--skip-trust")
         if auto_permissions.get("granted"):
             argv.append("--yolo")
         gm = models.get("gemini")
