@@ -9,6 +9,7 @@ import sys
 from typing import Any, Dict, List, Set, Tuple
 
 from clogem.graph import build_symbol_dependency_context_from_source_files
+from clogem.logging_utils import get_logger
 from clogem.repo_awareness import AutoRepoContextConfig, auto_repo_context_block_for_task
 from clogem.stitch import (
     build_stitch_prompt,
@@ -19,6 +20,8 @@ from clogem.stitch import (
 )
 from clogem.stitch.adapters import format_stitch_context_for_codex
 from clogem.task_intent import detect_prerequisite_first_task
+
+logger = get_logger(__name__)
 
 
 def _copy_to_clipboard(text: str) -> bool:
@@ -36,6 +39,7 @@ def _copy_to_clipboard(text: str) -> bool:
             )
             return True
         except Exception:
+            logger.debug("Clipboard command failed: %s", cmd, exc_info=True)
             return False
 
     try:
@@ -44,7 +48,7 @@ def _copy_to_clipboard(text: str) -> bool:
         pyperclip.copy(text)
         return True
     except Exception:
-        pass
+        logger.debug("pyperclip clipboard path unavailable", exc_info=True)
 
     # Native platform tools are often more reliable than GUI toolkits in
     # headless shells and remote sessions.
@@ -89,6 +93,7 @@ def _copy_to_clipboard(text: str) -> bool:
         root.destroy()
         return True
     except Exception:
+        logger.debug("tkinter clipboard fallback unavailable", exc_info=True)
         return False
 
 
@@ -111,6 +116,7 @@ def expand_rag_context_with_symbols(
     try:
         from clogem.symbols import SymbolIndex
     except Exception:
+        logger.debug("SymbolIndex import failed during Sym-RAG expansion", exc_info=True)
         return ""
 
     # Symbol candidates from class-like and function-call-like patterns.
@@ -283,6 +289,7 @@ def build_context_blocks(
                                 + sym_block
                             )
                 except Exception:
+                    logger.debug("Vector RAG context expansion failed", exc_info=True)
                     auto_context_block = ""
             if not auto_context_block:
                 auto_context_block = auto_repo_context_block_for_task(
@@ -296,6 +303,7 @@ def build_context_blocks(
                     ),
                 )
         except Exception:
+            logger.debug("Auto repo context build failed", exc_info=True)
             auto_context_block = ""
 
     symbol_dep_context_on = (
@@ -352,6 +360,7 @@ def build_context_blocks(
                         ),
                     )
         except Exception:
+            logger.debug("Symbol dependency context build failed", exc_info=True)
             symbol_dep_context_block = ""
 
     return auto_context_block, symbol_dep_context_block

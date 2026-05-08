@@ -8,6 +8,10 @@ import subprocess
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
+from clogem.logging_utils import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass(frozen=True)
 class TagMatch:
@@ -185,6 +189,7 @@ class SymbolIndex:
                 out.append(TagMatch(name=name, path=os.path.realpath(abs_path), line=ln, kind=kind))
             return out
         except Exception:
+            logger.debug("Failed loading symbol cache: %s", self.cache_path, exc_info=True)
             return None
 
     def _save_to_cache(self, tags: Sequence[TagMatch]) -> None:
@@ -193,6 +198,7 @@ class SymbolIndex:
             with open(self.cache_path, "w", encoding="utf-8") as f:
                 json.dump(data, f)
         except Exception:
+            logger.debug("Failed saving symbol cache: %s", self.cache_path, exc_info=True)
             # Cache is best-effort; never fail symbol resolution for caching.
             return
 
@@ -235,6 +241,7 @@ class SymbolIndex:
             self._save_to_cache(tags)
             return tags
         except Exception:
+            logger.debug("ctags execution failed for symbol index", exc_info=True)
             self._tag_records = []
             return []
 

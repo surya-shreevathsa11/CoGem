@@ -908,6 +908,7 @@ pip install ".[vector]"
 | `CLOGEM_MCP_DBSCHEMA_ARGS`           | Args for DB schema MCP server command                                                                                                            |
 | `CLOGEM_MCP_PLUGINS_JSON`            | JSON registry for arbitrary MCP plugins (`name -> {cmd,args,env,timeout_sec}`)                                                                   |
 | `CLOGEM_MCP_TIMEOUT_SEC`             | Default timeout for MCP plugin alias servers (default `60`)                                                                                      |
+| `CLOGEM_DEBUG`                       | `1`/`0` — enable debug logs for fallback/error paths that normally degrade gracefully                                                            |
 
 
 ---

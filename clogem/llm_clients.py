@@ -5,6 +5,10 @@ import mimetypes
 from dataclasses import dataclass
 from typing import Optional
 
+from clogem.logging_utils import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class LLMResult:
@@ -17,6 +21,7 @@ def openai_generate(prompt: str, model: str, timeout_sec: Optional[int] = None) 
     try:
         from openai import OpenAI
     except Exception as e:
+        logger.debug("OpenAI SDK import failed", exc_info=True)
         return LLMResult("", f"OpenAI SDK import failed: {e}", 1)
     try:
         client = OpenAI()
@@ -32,6 +37,7 @@ def openai_generate(prompt: str, model: str, timeout_sec: Optional[int] = None) 
         try:
             text = (rsp.choices[0].message.content or "").strip()
         except Exception:
+            logger.debug("OpenAI response content extraction failed", exc_info=True)
             text = ""
         if not text:
             text = str(rsp)
@@ -44,6 +50,7 @@ def gemini_generate(prompt: str, model: str, timeout_sec: Optional[int] = None) 
     try:
         from google import genai
     except Exception as e:
+        logger.debug("Google GenAI SDK import failed", exc_info=True)
         return LLMResult("", f"Google GenAI SDK import failed: {e}", 1)
     try:
         client = genai.Client()

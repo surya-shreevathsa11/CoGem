@@ -3,9 +3,12 @@ from dataclasses import dataclass
 from typing import List
 
 from clogem import artifacts as artifact_helpers
+from clogem.logging_utils import get_logger
 from clogem import prompts as prompt_defs
 from clogem.memory import MemoryStore
 from clogem.ui import boot_sequence
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -3254,6 +3257,7 @@ Return project edits as:
                     if arch_res.returncode == 0:
                         architect_subtasks = _parse_subtasks_json(arch_res.text or "")
                 except Exception:
+                    logger.debug("Architect subtask generation failed", exc_info=True)
                     architect_subtasks = []
 
             if architect_subtasks:
@@ -3582,6 +3586,7 @@ Return project edits as:
                         max_total_chars=6000,
                     )
             except Exception:
+                logger.debug("Git context block generation failed", exc_info=True)
                 git_ctx_block = ""
             review_context = (
                 f"{mem_block}{attach_block}{stitch_block}{stitch_rules_extra}{mode_hint}{GEMINI_RULES}"
@@ -3677,6 +3682,7 @@ Return ONLY code.
                                     break
                                 sink.append(chunk)
                         except Exception:
+                            logger.debug("Streaming codex stderr drain failed", exc_info=True)
                             return
 
                     t_err = threading.Thread(
@@ -3731,6 +3737,7 @@ Return ONLY code.
                     combined = (improved_raw or "") + "\n" + (imp_err or "")
                     _record_tokens("codex", combined)
                 except Exception:
+                    logger.debug("Streaming diff mode failed; falling back", exc_info=True)
                     # If streaming fails, fall back to the normal non-streaming path.
                     improved_raw, imp_err, imp_rc = await run_role(
                         "coder",

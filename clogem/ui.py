@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from clogem.logging_utils import get_logger
+
+logger = get_logger(__name__)
+
 
 # Boot palette (24-bit ANSI) — matches clogem rose theme, not plain white
 _BOOT_ROSE = "\033[38;2;190;85;85m"
@@ -88,6 +92,7 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
         try:
             parts = shlex.split(txt, posix=os.name != "nt")
         except Exception:
+            logger.debug("Failed to parse command line for dependency check: %s", txt, exc_info=True)
             parts = txt.split()
         if not parts:
             parts = [default_cmd]
@@ -102,6 +107,7 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
 
             return True
         except Exception:
+            logger.debug("OpenAI SDK readiness check failed", exc_info=True)
             return False
 
     def _gemini_sdk_ready() -> bool:
@@ -115,6 +121,7 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
 
             return True
         except Exception:
+            logger.debug("Gemini SDK readiness check failed", exc_info=True)
             return False
 
     def _claude_sdk_ready() -> bool:
@@ -125,6 +132,7 @@ def boot_sequence(required_providers: set[str] | None = None) -> bool:
 
             return True
         except Exception:
+            logger.debug("Anthropic SDK readiness check failed", exc_info=True)
             return False
 
     sys.stdout.write("\n")
