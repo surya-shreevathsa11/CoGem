@@ -3259,38 +3259,14 @@ Return project edits as:
 
             if mode == "chat":
                 if attach_block:
-                    trace_doing(
-                        "Chat reply has @ sources; generating a source-grounded answer "
-                        "so attached files/folders are actually used."
-                    )
-                    mem_ctx = mem_block.strip() if mem_block.strip() else "(none yet)"
-                    ask_task_body = (attach_block or "") + (task_clean or "(no message)")
-                    ask_raw, ask_err, ask_rc = await run_role(
-                        "orchestrator",
-                        ASK_MODE_PROMPT.replace("__MEMORY__", mem_ctx)
-                        .replace(
-                            "__CAPS__",
-                            runtime_stitch_capabilities_block()
-                            + runtime_clogem_commands_capabilities_block(),
+                    console.print(
+                        Text(
+                            "@ file/folder mentions are only inlined for BUILD tasks; "
+                            "they were not sent to this chat reply.",
+                            style=MUTED,
                         )
-                        .replace("__TASK__", ask_task_body),
-                        "Orchestrator: chat reply from @ sources...",
                     )
-                    if ask_rc == 0:
-                        chat_reply = (ask_raw or "").strip()
-                    else:
-                        console.print(
-                            Text(
-                                "Couldn't build a source-grounded chat reply; "
-                                "falling back to the routed chat response.",
-                                style=MUTED,
-                            )
-                        )
-                        if (ask_err or "").strip():
-                            console.print(
-                                Text((ask_err or "").strip()[:800], style=LOG_ERR)
-                            )
-                        console.print()
+                    console.print()
                 trace_done(
                     "Classified as conversation; I'm skipping the code pipeline and surfacing the routed reply next."
                 )
