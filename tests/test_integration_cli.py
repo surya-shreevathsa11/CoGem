@@ -21,12 +21,19 @@ def _write_fake_clis(bin_dir: Path) -> None:
                 "prompt = args[-1] if args else ''",
                 "if 'You update long-lived session memory' in prompt:",
                 "    print('NONE')",
+                "elif 'needle-chat-source' in prompt:",
+                "    print('CHAT_SOURCE_OK')",
+                "elif 'needle-from-workdir' in prompt:",
+                "    print('WORKDIR_ATTACHMENT_OK')",
                 "elif 'Improve the code.' in prompt and 'Feedback:' in prompt:",
                 "    print('```python\\ndef answer(x: int) -> int:\\n    return x\\n```')",
                 "elif 'TASK:' in prompt:",
                 "    print('```python\\ndef answer(x):\\n    return x\\n```')",
                 "elif 'ROUTING FORMAT' in prompt:",
-                "    print('BUILD')",
+                "    if 'force chat route' in prompt:",
+                "        print('CHAT Routed chat reply')",
+                "    else:",
+                "        print('BUILD')",
                 "else:",
                 "    print('Codex mock reply')",
             ]
@@ -184,6 +191,43 @@ def test_cli_research_without_attachments_skips_build_pipeline(tmp_path: Path):
     assert "Initial output" not in out
     assert "Review (" not in out
     assert "Summary (" not in out
+
+
+def test_cli_relative_at_paths_resolve_from_codex_workdir(tmp_path: Path):
+    repo_root = Path(__file__).resolve().parents[1]
+    bin_dir = tmp_path / "bin"
+    _write_fake_clis(bin_dir)
+    workdir = tmp_path / "project"
+    workdir.mkdir(parents=True, exist_ok=True)
+    (workdir / "doc.txt").write_text("needle-from-workdir", encoding="utf-8")
+
+    proc = _run_cli(
+        repo_root,
+        "/ask summarize @doc.txt\n/exit\n",
+        bin_dir,
+        extra_env={"CLOGEM_CODEX_WORKDIR": str(workdir)},
+    )
+    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    assert proc.returncode == 0
+    assert "WORKDIR_ATTACHMENT_OK" in out
+
+
+def test_cli_chat_route_uses_attached_sources(tmp_path: Path):
+    repo_root = Path(__file__).resolve().parents[1]
+    bin_dir = tmp_path / "bin"
+    _write_fake_clis(bin_dir)
+    doc = tmp_path / "chat-source.txt"
+    doc.write_text("needle-chat-source", encoding="utf-8")
+
+    proc = _run_cli(
+        repo_root,
+        f"force chat route @{doc}\n/exit\n",
+        bin_dir,
+    )
+    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    assert proc.returncode == 0
+    assert "CHAT_SOURCE_OK" in out
+    assert "Routed chat reply" not in out
 
 
 def test_cli_strict_sandbox_without_docker_fails_validation(tmp_path: Path):
